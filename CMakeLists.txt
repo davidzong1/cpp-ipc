@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.10)
 project(cpp-ipc)
 
+# 添加 ament_cmake 依赖
+find_package(ament_cmake REQUIRED)
+
 option(LIBIPC_BUILD_TESTS       "Build all of libipc's own tests."                      OFF)
 option(LIBIPC_BUILD_DEMOS       "Build all of libipc's own demos."                      OFF)
 option(LIBIPC_BUILD_SHARED_LIBS "Build shared libraries (DLLs)."                        OFF)
@@ -35,9 +38,8 @@ if (MSVC)
     endif()
 endif()
 
-set(LIBRARY_OUTPUT_PATH    ${CMAKE_BINARY_DIR}/bin)
-set(EXECUTABLE_OUTPUT_PATH ${CMAKE_BINARY_DIR}/bin)
-set(LIBIPC_PROJECT_DIR     ${PROJECT_SOURCE_DIR})
+# 使用标准输出路径，便于 ROS 2 集成
+set(LIBIPC_PROJECT_DIR ${PROJECT_SOURCE_DIR})
 
 # Unicode Support
 add_definitions(-DUNICODE -D_UNICODE)
@@ -68,7 +70,15 @@ if (LIBIPC_BUILD_DEMOS)
     endif()
 endif()
 
+# 使用 ament_cmake 提供的安装宏
+ament_export_include_directories(include)
+ament_export_libraries(${PROJECT_NAME})
+
+# 安装头文件
 install(
     DIRECTORY "include/"
     DESTINATION "include"
 )
+
+# 完成 ament 包注册
+ament_package()

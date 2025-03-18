@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>cpp-ipc</name>
+  <version>1.0.0</version>
+  <description>cpp-ipc</description>
+
+  <maintainer email="805483796@qq.com">Farbod Farshidian</maintainer>
+  <license>BSD3</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+
+</package>
