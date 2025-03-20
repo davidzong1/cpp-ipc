@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
-project(cpp-ipc)
-
+project(cpp_ipc)
+cmake_policy(SET CMP0057 NEW)
 # 添加 ament_cmake 依赖
 find_package(ament_cmake REQUIRED)
 
@@ -70,15 +70,23 @@ if (LIBIPC_BUILD_DEMOS)
     endif()
 endif()
 
-# 使用 ament_cmake 提供的安装宏
 ament_export_include_directories(include)
-ament_export_libraries(${PROJECT_NAME})
+ament_export_libraries(cpp_ipc)
+ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
 
-# 安装头文件
+# 安装头文件 - 使用正确的目标名称
 install(
-    DIRECTORY "include/"
-    DESTINATION "include"
+  TARGETS ipc  # 假设实际目标名称为 "ipc"，需要根据 src/CMakeLists.txt 确认
+  EXPORT export_${PROJECT_NAME}
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
+  INCLUDES DESTINATION include
 )
-
+  
+install(
+  DIRECTORY "include/"
+  DESTINATION "include"
+)
 # 完成 ament 包注册
 ament_package()
