@@ -76,7 +76,7 @@ ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
 
 # 安装头文件 - 使用正确的目标名称
 install(
-  TARGETS ipc  # 假设实际目标名称为 "ipc"，需要根据 src/CMakeLists.txt 确认
+  TARGETS cpp_ipc  # 假设实际目标名称为 "ipc"，需要根据 src/CMakeLists.txt 确认
   EXPORT export_${PROJECT_NAME}
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
