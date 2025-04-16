@@ -1,4 +1,4 @@
-project(ipc)
+project(cpp_ipc)
 
 set (PACKAGE_VERSION 1.3.0)
 
