@@ -60,7 +60,7 @@ public:
         for (unsigned k = 0;; ipc::yield(k)) {
             cc_t curr = this->cc_.load(std::memory_order_acquire);
             cc_t next = curr | (curr + 1); // find the first 0, and set it to 1.
-            if (next == 0) {
+            if (next == curr) {
                 // connection-slot is full.
                 return 0;
             }
@@ -72,6 +72,10 @@ public:
 
     cc_t disconnect(cc_t cc_id) noexcept {
         return this->cc_.fetch_and(~cc_id, std::memory_order_acq_rel) & ~cc_id;
+    }
+
+    bool connected(cc_t cc_id) const noexcept {
+        return (this->connections() & cc_id) != 0;
     }
 
     std::size_t conn_count(std::memory_order order = std::memory_order_acquire) const noexcept {
@@ -98,6 +102,11 @@ public:
         else {
             return this->cc_.fetch_sub(1, std::memory_order_relaxed) - 1;
         }
+    }
+
+    bool connected(cc_t cc_id) const noexcept {
+        // In non-broadcast mode, connection tags are only used for counting.
+        return (this->connections() != 0) && (cc_id != 0);
     }
 
     std::size_t conn_count(std::memory_order order = std::memory_order_acquire) const noexcept {
