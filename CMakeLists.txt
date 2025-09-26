@@ -1,10 +1,37 @@
 cmake_minimum_required(VERSION 3.10)
-project(cpp_ipc)
-cmake_policy(SET CMP0057 NEW)
-# 添加 ament_cmake 依赖
-find_package(ament_cmake REQUIRED)
+project(cpp-ipc)
+# 生成消息头文件
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+function(generate_ipc_messages)
+    message(STATUS "运行消息生成器...")
+    execute_process(
+        COMMAND ${Python3_EXECUTABLE} tools/batch_msg_srv_generator.py
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        RESULT_VARIABLE result
+        OUTPUT_VARIABLE output
+        ERROR_VARIABLE error
+    )
+    
+    if(NOT result)
+        message(STATUS "消息生成成功")
+    endif()
+endfunction()
+add_custom_target(generate_ipc_messages ALL
+    COMMAND ${Python3_EXECUTABLE} tools/batch_msg_srv_generator.py
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    COMMENT "运行消息生成器..."
+    VERBATIM
+)
+set_target_properties(generate_ipc_messages PROPERTIES
+    EXCLUDE_FROM_ALL FALSE
+    EXCLUDE_FROM_DEFAULT_BUILD FALSE
+)
+# 调用函数
+# generate_ipc_messages()
 
-option(LIBIPC_BUILD_TESTS       "Build all of libipc's own tests."                      OFF)
+option(ROSBUILD                 "Build with ROS2 support."                              OFF)
+option(LIBIPC_BUILD_TESTS       "Build all of libipc's own tests."                      ON)
+option(ENABLE_DEBUG_INFO        "Enable debug info "                                    OFF)
 option(LIBIPC_BUILD_DEMOS       "Build all of libipc's own demos."                      OFF)
 option(LIBIPC_BUILD_SHARED_LIBS "Build shared libraries (DLLs)."                        OFF)
 option(LIBIPC_USE_STATIC_CRT    "Set to ON to build with static CRT on Windows (/MT)."  OFF)
@@ -38,11 +65,18 @@ if (MSVC)
     endif()
 endif()
 
-# 使用标准输出路径，便于 ROS 2 集成
-set(LIBIPC_PROJECT_DIR ${PROJECT_SOURCE_DIR})
+set(LIBRARY_OUTPUT_PATH    ${CMAKE_BINARY_DIR}/bin)
+set(EXECUTABLE_OUTPUT_PATH ${CMAKE_BINARY_DIR}/bin)
+set(LIBIPC_PROJECT_DIR     ${PROJECT_SOURCE_DIR})
 
 # Unicode Support
 add_definitions(-DUNICODE -D_UNICODE)
+
+# ROS2构建支持
+if(ROSBUILD)
+    find_package(ament_cmake REQUIRED)
+    set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+endif()
 
 add_subdirectory(src)
 
@@ -52,6 +86,9 @@ if (LIBIPC_BUILD_TESTS)
         set(gtest_force_shared_crt OFF)
     else()
         set(gtest_force_shared_crt ON)
+    endif()
+    if(ROSBUILD)
+    cmake_policy(SET CMP0148 NEW)
     endif()
     add_subdirectory(3rdparty/gtest)
     add_subdirectory(test)
@@ -70,23 +107,44 @@ if (LIBIPC_BUILD_DEMOS)
     endif()
 endif()
 
-ament_export_include_directories(include)
-ament_export_libraries(cpp_ipc)
-ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
+if(NOT ROSBUILD)
+    install(DIRECTORY include/ DESTINATION include)
+    install(EXPORT cpp-ipc-targets
+        FILE cpp-ipc-targets.cmake
+        NAMESPACE cpp-ipc::
+        DESTINATION lib/cmake/${PROJECT_NAME}
+    )
+    configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/cmake/cmake_uninstall.cmake.in"
+        "${CMAKE_CURRENT_BINARY_DIR}/cmake/cmake_uninstall.cmake"
+        IMMEDIATE @ONLY)
+    add_custom_target(uninstall
+        COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_BINARY_DIR}/cmake/cmake_uninstall.cmake)
+else()
+    # 安装头文件
+    install(DIRECTORY include/
+        DESTINATION include/
+    )
 
-# 安装头文件 - 使用正确的目标名称
-install(
-  TARGETS cpp_ipc  # 假设实际目标名称为 "ipc"，需要根据 src/CMakeLists.txt 确认
-  EXPORT export_${PROJECT_NAME}
-  ARCHIVE DESTINATION lib
-  LIBRARY DESTINATION lib
-  RUNTIME DESTINATION bin
-  INCLUDES DESTINATION include
-)
-  
-install(
-  DIRECTORY "include/"
-  DESTINATION "include"
-)
-# 完成 ament 包注册
-ament_package()
+    # 只有当ipc目标存在时才处理导出
+    if(TARGET ipc)
+        install(TARGETS ipc
+            EXPORT ipc-targets
+            ARCHIVE DESTINATION lib
+            LIBRARY DESTINATION lib
+            RUNTIME DESTINATION bin
+        )
+        
+        install(EXPORT ipc-targets
+            FILE ipc-targets.cmake
+            DESTINATION lib/cmake/${PROJECT_NAME}
+        )
+        
+        ament_export_targets(ipc-targets HAS_LIBRARY_TARGET)
+        ament_export_libraries(ipc)
+    endif()
+
+    ament_export_dependencies()
+    ament_export_include_directories(include)
+    ament_package()
+endif()

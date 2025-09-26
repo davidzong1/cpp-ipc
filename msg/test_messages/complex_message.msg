@@ -1,0 +1,30 @@
+# 复杂消息类型测试
+# 包含所有支持的数据类型
+
+# 基本类型
+bool status
+int8 tiny_int  
+uint8 tiny_uint
+int16 small_int
+uint16 small_uint  
+int32 normal_int
+uint32 normal_uint
+int64 big_int
+uint64 big_uint
+float32 single_precision
+float64 double_precision
+string message
+
+# 数组类型  
+bool[] status_array
+int8[] tiny_int_array
+uint8[] tiny_uint_array
+int16[] small_int_array
+uint16[] small_uint_array
+int32[] normal_int_array
+uint32[] normal_uint_array
+int64[] big_int_array
+uint64[] big_uint_array
+float32[] single_precision_array
+float64[] double_precision_array
+string[] message_array
