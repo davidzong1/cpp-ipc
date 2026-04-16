@@ -1,0 +1,52 @@
+#include "libipc/udp.h"
+#include "libipc/debug.h"
+#include "libipc/utility/pimpl.h"
+#include "libipc/utility/log.h"
+#include "libipc/memory/resource.h"
+#include "libipc/platform/detail.h"
+#if defined(IPC_OS_WINDOWS_)
+#include "libipc/platform/win/udp.h"
+#elif defined(IPC_OS_LINUX_) || defined(IPC_OS_QNX_)
+#include "libipc/platform/posix/udp.h"
+#endif
+
+namespace ipc
+{
+    namespace socket
+    {
+        /* 前向声明 */
+        class UDPNode::UDPNode_ : public ipc::pimpl<UDPNode_>
+        {
+        public:
+            ipc::detail::socket::UDPNode node_;
+        };
+        /* 后续定义 */
+        UDPNode::UDPNode() : p_(p_->make()) {}
+        UDPNode::UDPNode(const char *name, const char *ip, uint16_t port) : UDPNode() { create(name, ip, port); }
+        UDPNode::~UDPNode()
+        {
+            close();
+            delete p_;
+        }
+        void UDPNode::create(const char *name, const char *ip, uint16_t port) Exception
+        {
+            impl(p_)->node_.create(name, ip, port);
+        }
+        bool UDPNode::connect() Exception
+        {
+            return impl(p_)->node_.connect();
+        }
+        bool UDPNode::send(std::vector<char> &data) Exception
+        {
+            return impl(p_)->node_.send(data);
+        }
+        bool UDPNode::receive(std::vector<char> &buffer, uint64_t tm) Exception
+        {
+            return impl(p_)->node_.receive(buffer, tm);
+        }
+        bool UDPNode::close() Exception
+        {
+            return impl(p_)->node_.close();
+        }
+    }
+}

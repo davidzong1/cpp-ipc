@@ -9,6 +9,10 @@
 *.dll
 *.dylib
 
+**/__pycache__/**
+include/msg/**
+!include/msg/ipc_msg_base/
+!include/msg/ipc_msg_base/**
 # Qt-es
 object_script.*.Release
 object_script.*.Debug

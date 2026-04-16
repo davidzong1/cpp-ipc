@@ -17,47 +17,44 @@ public:
     ~request_response_test_Request() = default;
 
     /* 成员变量 */
-    std::vector<double> request; /* request */
+    std::vector<double> request;/* request */
 
-    /* 序列化函数 */
-    std::vector<char> serialize() const override
-    {
-        int32_t request_count = request.size();
-        int32_t request_size = request_count * sizeof(double);
+        /* 序列化函数 */
+        ipc::buffer serialize() override
+        {
+            int32_t request_count = request.size();
+            int32_t request_size = request_count * sizeof(double);
 
-        // 计算总缓冲区大小
-        size_t total_size_ = 0;
-        total_size_ += sizeof(request_count) + request_size;
+            // 计算总缓冲区大小
+            size_t total_size_ = 0;
+            total_size_ += sizeof(request_count) + request_size;
 
-        // 一次性分配缓冲区
-        std::vector<char> buffer(total_size_);
-        total_size = total_size_;
-        size_t offset = 0;
+            // 一次性分配缓冲区
+            ipc::buffer buffer = std::move(this->serialize_data_cut(total_size_));
+            uint32_t offset = 0;
+            uint16_t page = 1;
 
-        // 序列化 request
-        std::memcpy(buffer.data() + offset, &request_count, sizeof(request_count));
-        offset += sizeof(request_count);
-        if (request_count > 0) {
-            std::memcpy(buffer.data() + offset, request.data(), request_size);
-            offset += request_size;
+            // 序列化 request
+            this->adapt_memcpy_tos(static_cast<uint8_t *>(buffer.data()), reinterpret_cast<const uint8_t *>(&request_count), page, offset, sizeof(request_count));
+            if (request_count > 0) {
+                this->adapt_memcpy_tos(static_cast<uint8_t *>(buffer.data()), reinterpret_cast<const uint8_t *>(request.data()), page, offset, request_size);
+            }
+
+            this->add_tail_msg(static_cast<uint8_t *>(buffer.data()) + offset, page);
+            return buffer;
         }
 
-        return buffer;
-    }
-
-    /* 反序列化函数 */
-    void deserialize(const std::vector<char>& buffer) override
-    {
-        size_t offset = 0;
-        // 反序列化 request
-        int32_t request_count;
-        std::memcpy(&request_count, buffer.data() + offset, sizeof(request_count));
-        offset += sizeof(request_count);
-        request.resize(request_count);
-        if (request_count > 0) {
-            std::memcpy(request.data(), buffer.data() + offset, request_count * sizeof(double));
-            offset += request_count * sizeof(double);
-        }
+        /* 反序列化函数 */
+        void deserialize(const ipc::buffer& buffer) override
+        {
+        uint32_t offset = 0;
+            // 反序列化 request
+            int32_t request_count;
+            this->adapt_memcpy_tods(reinterpret_cast<uint8_t *>(&request_count), static_cast<const uint8_t *>(buffer.data()), offset, sizeof(request_count));
+            request.resize(request_count);
+            if (request_count > 0) {
+                this->adapt_memcpy_tods(reinterpret_cast<uint8_t *>(request.data()), static_cast<const uint8_t *>(buffer.data()), offset, request_count * sizeof(double));
+            }
 
     }
 
@@ -77,47 +74,44 @@ public:
     ~request_response_test_Response() = default;
 
     /* 成员变量 */
-    std::vector<double> response; /* response */
+    std::vector<double> response;/* response */
 
-    /* 序列化函数 */
-    std::vector<char> serialize() const override
-    {
-        int32_t response_count = response.size();
-        int32_t response_size = response_count * sizeof(double);
+        /* 序列化函数 */
+        ipc::buffer serialize() override
+        {
+            int32_t response_count = response.size();
+            int32_t response_size = response_count * sizeof(double);
 
-        // 计算总缓冲区大小
-        size_t total_size_ = 0;
-        total_size_ += sizeof(response_count) + response_size;
+            // 计算总缓冲区大小
+            size_t total_size_ = 0;
+            total_size_ += sizeof(response_count) + response_size;
 
-        // 一次性分配缓冲区
-        std::vector<char> buffer(total_size_);
-        total_size = total_size_;
-        size_t offset = 0;
+            // 一次性分配缓冲区
+            ipc::buffer buffer = std::move(this->serialize_data_cut(total_size_));
+            uint32_t offset = 0;
+            uint16_t page = 1;
 
-        // 序列化 response
-        std::memcpy(buffer.data() + offset, &response_count, sizeof(response_count));
-        offset += sizeof(response_count);
-        if (response_count > 0) {
-            std::memcpy(buffer.data() + offset, response.data(), response_size);
-            offset += response_size;
+            // 序列化 response
+            this->adapt_memcpy_tos(static_cast<uint8_t *>(buffer.data()), reinterpret_cast<const uint8_t *>(&response_count), page, offset, sizeof(response_count));
+            if (response_count > 0) {
+                this->adapt_memcpy_tos(static_cast<uint8_t *>(buffer.data()), reinterpret_cast<const uint8_t *>(response.data()), page, offset, response_size);
+            }
+
+            this->add_tail_msg(static_cast<uint8_t *>(buffer.data()) + offset, page);
+            return buffer;
         }
 
-        return buffer;
-    }
-
-    /* 反序列化函数 */
-    void deserialize(const std::vector<char>& buffer) override
-    {
-        size_t offset = 0;
-        // 反序列化 response
-        int32_t response_count;
-        std::memcpy(&response_count, buffer.data() + offset, sizeof(response_count));
-        offset += sizeof(response_count);
-        response.resize(response_count);
-        if (response_count > 0) {
-            std::memcpy(response.data(), buffer.data() + offset, response_count * sizeof(double));
-            offset += response_count * sizeof(double);
-        }
+        /* 反序列化函数 */
+        void deserialize(const ipc::buffer& buffer) override
+        {
+        uint32_t offset = 0;
+            // 反序列化 response
+            int32_t response_count;
+            this->adapt_memcpy_tods(reinterpret_cast<uint8_t *>(&response_count), static_cast<const uint8_t *>(buffer.data()), offset, sizeof(response_count));
+            response.resize(response_count);
+            if (response_count > 0) {
+                this->adapt_memcpy_tods(reinterpret_cast<uint8_t *>(response.data()), static_cast<const uint8_t *>(buffer.data()), offset, response_count * sizeof(double));
+            }
 
     }
 

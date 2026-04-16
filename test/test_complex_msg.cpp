@@ -5,16 +5,18 @@
 #include <chrono>
 #include "ipc_msg/test_messages/complex_message.hpp"
 using namespace dzIPC::Msg;
-class ComplexMessageTest {
- private:
+class ComplexMessageTest
+{
+private:
   std::random_device rd;
   std::mt19937 gen;
 
- public:
+public:
   ComplexMessageTest() : gen(rd()) {}
 
   // 生成随机测试数据
-  complex_message generateRandomMessage() {
+  complex_message generateRandomMessage()
+  {
     complex_message msg;
 
     std::uniform_int_distribution<> bool_dis(0, 1);
@@ -50,62 +52,74 @@ class ComplexMessageTest {
     int array_size = array_size_dis(gen);
 
     msg.status_array.clear();
-    for (int i = 0; i < array_size; ++i) {
+    for (int i = 0; i < array_size; ++i)
+    {
       msg.status_array.push_back(bool_dis(gen));
     }
 
     msg.tiny_int_array.clear();
-    for (int i = 0; i < array_size; ++i) {
+    for (int i = 0; i < array_size; ++i)
+    {
       msg.tiny_int_array.push_back(int8_dis(gen));
     }
 
     msg.tiny_uint_array.clear();
-    for (int i = 0; i < array_size; ++i) {
+    for (int i = 0; i < array_size; ++i)
+    {
       msg.tiny_uint_array.push_back(uint8_dis(gen));
     }
 
     msg.small_int_array.clear();
-    for (int i = 0; i < array_size; ++i) {
+    for (int i = 0; i < array_size; ++i)
+    {
       msg.small_int_array.push_back(int16_dis(gen));
     }
 
     msg.small_uint_array.clear();
-    for (int i = 0; i < array_size; ++i) {
+    for (int i = 0; i < array_size; ++i)
+    {
       msg.small_uint_array.push_back(uint16_dis(gen));
     }
 
     msg.normal_int_array.clear();
-    for (int i = 0; i < array_size; ++i) {
+    for (int i = 0; i < array_size; ++i)
+    {
       msg.normal_int_array.push_back(int32_dis(gen));
     }
 
     msg.normal_uint_array.clear();
-    for (int i = 0; i < array_size; ++i) {
+    for (int i = 0; i < array_size; ++i)
+    {
       msg.normal_uint_array.push_back(uint32_dis(gen));
     }
 
     msg.big_int_array.clear();
-    for (int i = 0; i < array_size; ++i) {
+    for (int i = 0; i < array_size; ++i)
+    {
       msg.big_int_array.push_back(int64_dis(gen));
     }
 
     msg.big_uint_array.clear();
-    for (int i = 0; i < array_size; ++i) {
+    for (int i = 0; i < array_size; ++i)
+    {
       msg.big_uint_array.push_back(uint64_dis(gen));
     }
 
     msg.single_precision_array.clear();
-    for (int i = 0; i < array_size; ++i) {
+    for (int i = 0; i < array_size; ++i)
+    {
       msg.single_precision_array.push_back(float_dis(gen));
     }
 
     msg.double_precision_array.clear();
-    for (int i = 0; i < array_size; ++i) {
+    for (int i = 0; i < array_size; ++i)
+    {
       msg.double_precision_array.push_back(double_dis(gen));
     }
 
     msg.message_array.clear();
-    for (int i = 0; i < array_size; ++i) {
+    for (int i = 0; i < array_size; ++i)
+    {
       msg.message_array.push_back("String " + std::to_string(i) + "_" +
                                   std::to_string(gen() % 1000));
     }
@@ -115,43 +129,62 @@ class ComplexMessageTest {
 
   // 验证两个消息是否相等
   bool verifyMessages(const complex_message &original,
-                      const complex_message &deserialized) {
-    if (original.status != deserialized.status) return false;
-    if (original.tiny_int != deserialized.tiny_int) return false;
-    if (original.tiny_uint != deserialized.tiny_uint) return false;
-    if (original.small_int != deserialized.small_int) return false;
-    if (original.small_uint != deserialized.small_uint) return false;
-    if (original.normal_int != deserialized.normal_int) return false;
-    if (original.normal_uint != deserialized.normal_uint) return false;
-    if (original.big_int != deserialized.big_int) return false;
-    if (original.big_uint != deserialized.big_uint) return false;
+                      const complex_message &deserialized)
+  {
+    if (original.status != deserialized.status)
+      return false;
+    if (original.tiny_int != deserialized.tiny_int)
+      return false;
+    if (original.tiny_uint != deserialized.tiny_uint)
+      return false;
+    if (original.small_int != deserialized.small_int)
+      return false;
+    if (original.small_uint != deserialized.small_uint)
+      return false;
+    if (original.normal_int != deserialized.normal_int)
+      return false;
+    if (original.normal_uint != deserialized.normal_uint)
+      return false;
+    if (original.big_int != deserialized.big_int)
+      return false;
+    if (original.big_uint != deserialized.big_uint)
+      return false;
     if (std::abs(original.single_precision - deserialized.single_precision) >
         1e-6f)
       return false;
     if (std::abs(original.double_precision - deserialized.double_precision) >
         1e-12)
       return false;
-    if (original.message != deserialized.message) return false;
+    if (original.message != deserialized.message)
+      return false;
 
-    if (original.status_array != deserialized.status_array) return false;
-    if (original.tiny_int_array != deserialized.tiny_int_array) return false;
-    if (original.tiny_uint_array != deserialized.tiny_uint_array) return false;
-    if (original.small_int_array != deserialized.small_int_array) return false;
+    if (original.status_array != deserialized.status_array)
+      return false;
+    if (original.tiny_int_array != deserialized.tiny_int_array)
+      return false;
+    if (original.tiny_uint_array != deserialized.tiny_uint_array)
+      return false;
+    if (original.small_int_array != deserialized.small_int_array)
+      return false;
     if (original.small_uint_array != deserialized.small_uint_array)
       return false;
     if (original.normal_int_array != deserialized.normal_int_array)
       return false;
     if (original.normal_uint_array != deserialized.normal_uint_array)
       return false;
-    if (original.big_int_array != deserialized.big_int_array) return false;
-    if (original.big_uint_array != deserialized.big_uint_array) return false;
-    if (original.message_array != deserialized.message_array) return false;
+    if (original.big_int_array != deserialized.big_int_array)
+      return false;
+    if (original.big_uint_array != deserialized.big_uint_array)
+      return false;
+    if (original.message_array != deserialized.message_array)
+      return false;
 
     // 浮点数组需要特殊处理
     if (original.single_precision_array.size() !=
         deserialized.single_precision_array.size())
       return false;
-    for (size_t i = 0; i < original.single_precision_array.size(); ++i) {
+    for (size_t i = 0; i < original.single_precision_array.size(); ++i)
+    {
       if (std::abs(original.single_precision_array[i] -
                    deserialized.single_precision_array[i]) > 1e-6f)
         return false;
@@ -160,7 +193,8 @@ class ComplexMessageTest {
     if (original.double_precision_array.size() !=
         deserialized.double_precision_array.size())
       return false;
-    for (size_t i = 0; i < original.double_precision_array.size(); ++i) {
+    for (size_t i = 0; i < original.double_precision_array.size(); ++i)
+    {
       if (std::abs(original.double_precision_array[i] -
                    deserialized.double_precision_array[i]) > 1e-12)
         return false;
@@ -170,7 +204,8 @@ class ComplexMessageTest {
   }
 
   // 性能测试
-  void performanceTest(int iterations = 1000) {
+  void performanceTest(int iterations = 1000)
+  {
     std::cout << "\n=== 性能测试 ===" << std::endl;
     std::cout << "测试迭代次数: " << iterations << std::endl;
 
@@ -178,8 +213,9 @@ class ComplexMessageTest {
 
     // 序列化性能测试
     auto start = std::chrono::high_resolution_clock::now();
-    std::vector<char> serialized_data;
-    for (int i = 0; i < iterations; ++i) {
+    ipc::buffer serialized_data;
+    for (int i = 0; i < iterations; ++i)
+    {
       serialized_data = msg.serialize();
     }
     auto end = std::chrono::high_resolution_clock::now();
@@ -196,7 +232,8 @@ class ComplexMessageTest {
     // 反序列化性能测试
     start = std::chrono::high_resolution_clock::now();
     complex_message deserialized;
-    for (int i = 0; i < iterations; ++i) {
+    for (int i = 0; i < iterations; ++i)
+    {
       deserialized.deserialize(serialized_data);
     }
     end = std::chrono::high_resolution_clock::now();
@@ -209,34 +246,44 @@ class ComplexMessageTest {
               << " 微秒" << std::endl;
 
     // 验证正确性
-    if (verifyMessages(msg, deserialized)) {
+    if (verifyMessages(msg, deserialized))
+    {
       std::cout << "✓ 性能测试中的数据验证通过" << std::endl;
-    } else {
+    }
+    else
+    {
       std::cout << "✗ 性能测试中的数据验证失败" << std::endl;
     }
   }
 
   // 运行所有测试
-  void runAllTests() {
+  void runAllTests()
+  {
     std::cout << "=== 复杂消息类型测试 ===" << std::endl;
 
     int passed = 0;
     int total = 100;
 
-    for (int i = 0; i < total; ++i) {
-      auto original = generateRandomMessage();
-      auto serialized = original.serialize();
+    for (int i = 0; i < total; ++i)
+    {
+      std::cout << "正在进行测试 " << i + 1 << "/" << total << "..." << std::endl;
+      complex_message original = generateRandomMessage();
+      ipc::buffer serialized = original.serialize();
 
       complex_message deserialized;
       deserialized.deserialize(serialized);
 
-      if (verifyMessages(original, deserialized)) {
+      if (verifyMessages(original, deserialized))
+      {
         passed++;
-      } else {
+      }
+      else
+      {
         std::cout << "测试 " << i + 1 << " 失败" << std::endl;
       }
 
-      if ((i + 1) % 20 == 0) {
+      if ((i + 1) % 20 == 0)
+      {
         std::cout << "完成 " << i + 1 << "/" << total << " 个测试..."
                   << std::endl;
       }
@@ -245,16 +292,20 @@ class ComplexMessageTest {
     std::cout << "\n测试结果: " << passed << "/" << total << " 通过"
               << std::endl;
 
-    if (passed == total) {
+    if (passed == total)
+    {
       std::cout << "✓ 所有随机测试通过！" << std::endl;
       performanceTest();
-    } else {
+    }
+    else
+    {
       std::cout << "✗ 有 " << (total - passed) << " 个测试失败！" << std::endl;
     }
   }
 };
 
-int main() {
+int main()
+{
   ComplexMessageTest test;
   test.runAllTests();
   return 0;

@@ -35,12 +35,21 @@ option(ENABLE_DEBUG_INFO        "Enable debug info "                            
 option(LIBIPC_BUILD_DEMOS       "Build all of libipc's own demos."                      OFF)
 option(LIBIPC_BUILD_SHARED_LIBS "Build shared libraries (DLLs)."                        OFF)
 option(LIBIPC_USE_STATIC_CRT    "Set to ON to build with static CRT on Windows (/MT)."  OFF)
-
+set(CMAKE_BUILD_TYPE Release)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -DNDEBUG")
 if(NOT MSVC)
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O2")
+    if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+        # 调试模式(Debug)下强制使用 -O0 编译并保留调试信息
+        set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -O0 -g")
+        set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -O0 -g")
+    else()
+        # 非调试模式下使用 -O2 优化
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3")
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3")
+    endif()
 endif()
 
 if (MSVC)
