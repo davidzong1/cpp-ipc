@@ -10,6 +10,7 @@ endif()
 aux_source_directory(${LIBIPC_PROJECT_DIR}/src/libipc SRC_FILES)
 aux_source_directory(${LIBIPC_PROJECT_DIR}/src/libipc/sync SRC_FILES)
 aux_source_directory(${LIBIPC_PROJECT_DIR}/src/libipc/platform SRC_FILES)
+aux_source_directory(${LIBIPC_PROJECT_DIR}/src/libipc/socket SRC_FILES)
 aux_source_directory(${LIBIPC_PROJECT_DIR}/src/dzIPC SRC_FILES)
 
 file(GLOB HEAD_FILES

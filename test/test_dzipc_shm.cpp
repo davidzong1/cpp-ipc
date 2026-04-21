@@ -9,11 +9,11 @@ bool response_complete = false;
 void ser_thread_function()
 {
   std::cerr << "Service thread is running" << std::endl;
-  dzIPC::ServiceDataPtr message_ = std::make_shared<dzIPC::ServiceData>(
+  dzIPC::shm::ServiceDataPtr message_ = std::make_shared<dzIPC::ServiceData>(
       std::make_shared<dzIPC::Srv::request_response_test_Request>(),
       std::make_shared<dzIPC::Srv::request_response_test_Response>());
-  dzIPC::shm_ser_ipc service_ipc(
-      "request_response_test", message_, [](dzIPC::ServiceDataPtr &msg)
+  dzIPC::shm::shm_ser_ipc service_ipc(
+      "request_response_test", message_, [](dzIPC::shm::ServiceDataPtr &msg)
       {
         auto req =
             std::static_pointer_cast<dzIPC::Srv::request_response_test_Request>(
@@ -34,10 +34,10 @@ void ser_thread_function()
 void cli_thread_function()
 {
   std::cerr << "Client thread is running" << std::endl;
-  dzIPC::ServiceDataPtr message_ = std::make_shared<dzIPC::ServiceData>(
+  dzIPC::shm::ServiceDataPtr message_ = std::make_shared<dzIPC::ServiceData>(
       std::make_shared<dzIPC::Srv::request_response_test_Request>(),
       std::make_shared<dzIPC::Srv::request_response_test_Response>());
-  dzIPC::shm_cli_ipc client_ipc("request_response_test", message_);
+  dzIPC::shm::shm_cli_ipc client_ipc("request_response_test", message_);
   std::vector<double> test_data = {1.0, 2.0, 3.0, 4.0, 5.0};
   client_ipc.InitChannel();
   auto request = std::make_shared<dzIPC::Srv::request_response_test_Request>();
@@ -49,7 +49,7 @@ void cli_thread_function()
     for (int i = 0; i < 10; i++)
     {
       test_data.push_back(i);
-      dzIPC::msgcast<dzIPC::Srv::request_response_test_Request>(
+      dzIPC::shm::msgcast<dzIPC::Srv::request_response_test_Request>(
           message_->request())
           ->request = test_data;
       auto last_time = std::chrono::steady_clock::now();
@@ -60,7 +60,7 @@ void cli_thread_function()
       std::this_thread::sleep_for(std::chrono::milliseconds(2));
     }
 
-    auto response_ = dzIPC::msgcast<dzIPC::Srv::request_response_test_Response>(
+    auto response_ = dzIPC::shm::msgcast<dzIPC::Srv::request_response_test_Response>(
         message_->response());
     std::cout << "#### Response:";
     for (int i = 0; i < response_->response.size(); i++)
@@ -84,9 +84,9 @@ void cli_thread_function()
 
 void pulish_thread_function()
 {
-  dzIPC::TopicDataPtr topic_msg_ = std::make_shared<dzIPC::TopicData>(
+  dzIPC::shm::TopicDataPtr topic_msg_ = std::make_shared<dzIPC::TopicData>(
       std::make_shared<dzIPC::Msg::test_msg>());
-  dzIPC::shm_pub_ipc publisher("test_msg2");
+  dzIPC::shm::shm_pub_ipc publisher("test_msg2");
   publisher.InitChannel();
   int count = 0;
   bool exit_flag = false;
@@ -111,14 +111,14 @@ void pulish_thread_function()
 
 void subscribe_thread_function()
 {
-  dzIPC::TopicDataPtr topic_msg_ = std::make_shared<dzIPC::TopicData>(
+  dzIPC::shm::TopicDataPtr topic_msg_ = std::make_shared<dzIPC::TopicData>(
       std::make_shared<dzIPC::Msg::test_msg>());
-  dzIPC::shm_sub_ipc subscriber("test_msg2", topic_msg_, 10);
+  dzIPC::shm::shm_sub_ipc subscriber("test_msg2", topic_msg_, 10);
   subscriber.InitChannel();
   bool exit_flag = false;
   while (!exit_flag)
   {
-    dzIPC::MsgPtr msg;
+    dzIPC::shm::MsgPtr msg;
     if (subscriber.try_get(msg))
     {
       auto received_msg = std::static_pointer_cast<dzIPC::Msg::test_msg>(msg);

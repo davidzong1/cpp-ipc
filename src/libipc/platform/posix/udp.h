@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <errno.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include "libipc/buffer.h"
@@ -22,7 +23,8 @@ namespace ipc
                 char ip[16]{};
                 uint16_t port{};
                 int server_fd{-1};
-                std::vector<char> temp_buffer;
+                ipc::buffer temp_buffer;
+                char rev_fail_fail{};
 
             public:
                 UDPNode() {}
@@ -33,7 +35,9 @@ namespace ipc
                     strncpy(this->name, name, sizeof(this->name) - 1);
                     strncpy(this->ip, ip, sizeof(this->ip) - 1);
                     this->port = port;
-                    temp_buffer.resize(1472); // 预分配最大UDP报文长度
+                    uint8_t *ptr = new uint8_t[1472];
+                    temp_buffer = ipc::buffer(ptr, 1472, [](void *p, std::size_t s)
+                                              { delete[] static_cast<uint8_t *>(p); }); // 预分配最大UDP报文长度
                 }
 
                 bool connect()
@@ -50,6 +54,8 @@ namespace ipc
                     }
 
                     int reuse = 1;
+                    int nRecvBuf = 1024 * 1024; // 1MB
+                    ::setsockopt(server_fd, SOL_SOCKET, SO_RCVBUF, &nRecvBuf, sizeof(nRecvBuf));
                     ::setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
 #ifdef SO_REUSEPORT
                     ::setsockopt(server_fd, SOL_SOCKET, SO_REUSEPORT, &reuse, sizeof(reuse));
@@ -90,7 +96,7 @@ namespace ipc
                     return true;
                 }
 
-                bool send(std::vector<char> &data)
+                bool send(ipc::buffer &data)
                 {
                     if (server_fd < 0 || data.size() == 0)
                     {
@@ -124,10 +130,11 @@ namespace ipc
                     return true;
                 }
 
-                bool receive(std::vector<char> &buffer, uint64_t tm)
+                ipc::buffer receive(uint64_t tm)
                 {
                     if (server_fd < 0)
-                        return false;
+                        return ipc::buffer();
+
                     int err_cnt = 0;
                     if (tm == ipc::invalid_value)
                     {
@@ -136,26 +143,24 @@ namespace ipc
                             ssize_t received = ::recvfrom(server_fd, temp_buffer.data(), temp_buffer.size(), 0, nullptr, nullptr);
                             if (received >= 0)
                             {
-                                buffer.assign(temp_buffer.data(), temp_buffer.data() + received);
-                                return true;
+                                return ipc::buffer(temp_buffer.data(), received);
                             }
                             if (errno == EINTR)
                             {
                                 err_cnt++;
                                 if (err_cnt >= 100)
                                 {
-                                    return false; // 避免无限重试
+                                    return ipc::buffer(); // 避免无限重试
                                 }
                                 continue;
                             }
-                            return false;
+                            return ipc::buffer();
                         }
                     }
 
                     // 2. 处理定时等待逻辑
                     auto start_time = std::chrono::steady_clock::now();
                     uint64_t remaining_ms = tm;
-                    int err_cnt = 0;
 
                     while (remaining_ms > 0)
                     {
@@ -174,39 +179,36 @@ namespace ipc
                             ssize_t received = ::recvfrom(server_fd, temp_buffer.data(), temp_buffer.size(), MSG_DONTWAIT, nullptr, nullptr);
                             if (received >= 0)
                             {
-                                buffer.assign(temp_buffer.data(), temp_buffer.data() + received);
-                                return true;
+                                return ipc::buffer(temp_buffer.data(), received);
                             }
                             if ((errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK) && ++err_cnt < 10)
                             {
                                 goto refresh_time;
-                                continue;
                             }
-                            return false;
+                            return ipc::buffer();
                         }
                         else if (ret == 0)
                         {
-                            return false; // 真正超时
+                            return ipc::buffer(); // 真正超时
                         }
                         else
                         {
                             if (errno == EINTR && ++err_cnt < 5)
                             {
                                 goto refresh_time;
-                                continue;
                             }
-                            return false;
+                            return ipc::buffer();
                         }
 
                     refresh_time:
                         auto now = std::chrono::steady_clock::now();
                         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time).count();
                         if (static_cast<uint64_t>(elapsed) >= tm)
-                            return false;
+                            return ipc::buffer();
                         remaining_ms = tm - static_cast<uint64_t>(elapsed);
                     }
 
-                    return false;
+                    return ipc::buffer();
                 }
 
                 bool close()

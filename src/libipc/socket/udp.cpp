@@ -36,13 +36,13 @@ namespace ipc
         {
             return impl(p_)->node_.connect();
         }
-        bool UDPNode::send(std::vector<char> &data) Exception
+        bool UDPNode::send(ipc::buffer &data) Exception
         {
             return impl(p_)->node_.send(data);
         }
-        bool UDPNode::receive(std::vector<char> &buffer, uint64_t tm) Exception
+        ipc::buffer UDPNode::receive(uint64_t tm) Exception
         {
-            return impl(p_)->node_.receive(buffer, tm);
+            return impl(p_)->node_.receive(tm);
         }
         bool UDPNode::close() Exception
         {

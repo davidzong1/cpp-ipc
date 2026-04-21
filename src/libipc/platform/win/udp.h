@@ -88,6 +88,8 @@ namespace ipc
                     }
 
                     BOOL reuse = TRUE;
+                    int nRecvBuf = 1024 * 1024; // 1MB
+                    ::setsockopt(server_fd, SOL_SOCKET, SO_RCVBUF, reinterpret_cast<char *>(&nRecvBuf), sizeof(nRecvBuf));
                     ::setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<char *>(&reuse), sizeof(reuse));
 #ifdef SO_REUSEPORT
                     ::setsockopt(server_fd, SOL_SOCKET, SO_REUSEPORT, reinterpret_cast<char *>(&reuse), sizeof(reuse));
@@ -127,7 +129,7 @@ namespace ipc
                     ::setsockopt(server_fd, IPPROTO_IP, IP_MULTICAST_LOOP, reinterpret_cast<char *>(&loop), sizeof(loop));
                     return true;
                 }
-                bool send(std::vector<char> &data)
+                bool send(ipc::buffer &data)
                 {
                     if (server_fd == INVALID_SOCKET || !data)
                     {
@@ -157,10 +159,10 @@ namespace ipc
                     return sent == static_cast<int>(payload_size);
                 }
 
-                bool receive(std::vector<char> &buffer, uint64_t tm)
+                ipc::buffer receive(uint64_t tm)
                 {
-                    if (server_fd == INVALID_SOCKET || buffer.size() == 0)
-                        return false;
+                    if (server_fd == INVALID_SOCKET)
+                        return ipc::buffer();
 
                     // 1. 无限等待模式
                     if (tm == ipc::invalid_value)
@@ -171,13 +173,8 @@ namespace ipc
                             int received = ::recvfrom(server_fd, temp_buffer.data(), temp_buffer.size(), 0, nullptr, nullptr);
                             if (received >= 0)
                             {
-                                buffer.assign(temp_buffer.data(), temp_buffer.data() + received);
-                                return true;
-
-                                int err = ::WSAGetLastError();
-                                if (err == WSAEINTR && ++err_cnt < 10)
-                                    continue;
-                                return false;
+                                ;
+                                return ipc::buffer(temp_buffer.data(), received);
                             }
                         }
 
@@ -203,24 +200,23 @@ namespace ipc
                                 int received = ::recvfrom(server_fd, temp_buffer.data(), temp_buffer.size(), 0, nullptr, nullptr);
                                 if (received >= 0)
                                 {
-                                    buffer.assign(temp_buffer.data(), temp_buffer.data() + received);
-                                    return true;
+                                    return ipc::buffer(temp_buffer.data(), received);
                                 }
 
                                 int err = ::WSAGetLastError();
                                 // info too large for buffer
                                 if (err == WSAEMSGSIZE)
-                                    return true;
+                                    return ipc::buffer();
                                 // 异常中断或资源暂时不可用
                                 if ((err == WSAEINTR || err == WSAEWOULDBLOCK) && ++err_cnt < 10)
                                 {
                                     goto refresh_time;
                                 }
-                                return false;
+                                return ipc::buffer();
                             }
                             else if (ret == 0)
                             { // Select timeout
-                                return false;
+                                return ipc::buffer();
                             }
                             else
                             { // Select error
@@ -228,18 +224,18 @@ namespace ipc
                                 {
                                     goto refresh_time;
                                 }
-                                return false;
+                                return ipc::buffer();
                             }
 
                         refresh_time:
                             auto now = std::chrono::steady_clock::now();
                             auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time).count();
                             if (static_cast<uint64_t>(elapsed) >= tm)
-                                return false;
+                                return ipc::buffer();
                             remaining_ms = tm - static_cast<uint64_t>(elapsed);
                         }
 
-                        return false;
+                        return ipc::buffer();
                     }
 
                     bool close()
@@ -265,3 +261,4 @@ namespace ipc
             }
         }
     }
+}

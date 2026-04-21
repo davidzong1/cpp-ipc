@@ -35,10 +35,17 @@ option(ENABLE_DEBUG_INFO        "Enable debug info "                            
 option(LIBIPC_BUILD_DEMOS       "Build all of libipc's own demos."                      OFF)
 option(LIBIPC_BUILD_SHARED_LIBS "Build shared libraries (DLLs)."                        OFF)
 option(LIBIPC_USE_STATIC_CRT    "Set to ON to build with static CRT on Windows (/MT)."  OFF)
-set(CMAKE_BUILD_TYPE Release)
+option(OPEN_DEBUG_MODE          "Enable debug mode in PROJECT."                         OFF)
+
+
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -DNDEBUG")
+if (OPEN_DEBUG_MODE)
+    set(CMAKE_BUILD_TYPE Debug)
+else()
+    set(CMAKE_BUILD_TYPE Release)
+endif()
 if(NOT MSVC)
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O2")
     if (CMAKE_BUILD_TYPE STREQUAL "Debug")
@@ -88,6 +95,7 @@ if(ROSBUILD)
 endif()
 
 add_subdirectory(src)
+add_subdirectory(tools/dzipc_topic_list)
 
 if (LIBIPC_BUILD_TESTS)
     set(GOOGLETEST_VERSION 1.10.0)
