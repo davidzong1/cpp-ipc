@@ -1,14 +1,97 @@
 #include "dzIPC/socket_pub_sub_ipc.h"
+#include "dzIPC/socket_ser_cli_ipc.h"
 #include "ipc_srv/request_response_test/request_response_test.hpp"
 #include "ipc_msg/test_msg2/test_msg.hpp"
 #include <thread>
 #include <iostream>
 #include <chrono>
+
+bool response_complete = false;
+void ser_thread_function()
+{
+    std::cerr << "Service thread is running" << std::endl;
+    dzIPC::socket::ServiceDataPtr message_ = std::make_shared<dzIPC::ServiceData>(
+        std::make_shared<dzIPC::Srv::request_response_test_Request>(),
+        std::make_shared<dzIPC::Srv::request_response_test_Response>());
+    dzIPC::socket::socket_ser_ipc service_ipc(
+        "request_response_test", message_, [](dzIPC::socket::ServiceDataPtr &msg)
+        {
+        auto req =
+            std::static_pointer_cast<dzIPC::Srv::request_response_test_Request>(
+                msg->request());
+        auto res = std::static_pointer_cast<
+            dzIPC::Srv::request_response_test_Response>(msg->response());
+        res->response.resize(req->request.size());
+        for (int i = 0; i < req->request.size(); i++) {
+          res->response[i] = req->request[i] + 1.0;
+        } },
+        true);
+    service_ipc.InitChannel();
+    while (!response_complete)
+    {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    std::cerr << "Service thread is exiting" << std::endl;
+}
+void cli_thread_function()
+{
+    std::cerr << "Client thread is running" << std::endl;
+    dzIPC::socket::ServiceDataPtr message_ = std::make_shared<dzIPC::ServiceData>(
+        std::make_shared<dzIPC::Srv::request_response_test_Request>(),
+        std::make_shared<dzIPC::Srv::request_response_test_Response>());
+    dzIPC::socket::socket_cli_ipc client_ipc("request_response_test", message_, true);
+    std::vector<double> test_data = {1.0, 2.0, 3.0, 4.0, 5.0};
+    client_ipc.InitChannel();
+    auto request = std::make_shared<dzIPC::Srv::request_response_test_Request>();
+    int cnt = 0;
+    while (cnt < 10)
+    {
+        std::vector<std::chrono::microseconds> times;
+        test_data.clear();
+        for (int i = 0; i < 10; i++)
+        {
+            test_data.push_back(i);
+            dzIPC::socket::msgcast<dzIPC::Srv::request_response_test_Request>(
+                message_->request())
+                ->request = test_data;
+            auto last_time = std::chrono::high_resolution_clock::now();
+            while (!client_ipc.send_request(message_))
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            auto now_time = std::chrono::high_resolution_clock::now();
+            times.push_back(std::chrono::duration_cast<std::chrono::microseconds>(
+                now_time - last_time));
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+
+        auto response_ = dzIPC::socket::msgcast<dzIPC::Srv::request_response_test_Response>(
+            message_->response());
+        std::cout << "#### Response:";
+        for (int i = 0; i < response_->response.size(); i++)
+        {
+            std::cout << " " << response_->response[i];
+        }
+
+        std::cout << std::endl
+                  << "#### Request-Response time: ";
+        for (int i = 0; i < times.size(); i++)
+        {
+            std::cout << times[i].count() << " us    ";
+        }
+        std::cout << std::endl;
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        cnt++;
+    }
+    response_complete = true;
+    std::cerr << "Client thread is exiting" << std::endl;
+}
+
 void pulish_thread_function()
 {
     dzIPC::socket::TopicDataPtr topic_msg_ = std::make_shared<dzIPC::TopicData>(
         std::make_shared<dzIPC::Msg::test_msg>());
-    dzIPC::socket::socket_pub_ipc publisher("test_msg2", 1, true);
+    dzIPC::socket::socket_pub_ipc publisher(topic_msg_, "test_msg2", 1, true);
     publisher.InitChannel();
     int count = 0;
     bool exit_flag = false;

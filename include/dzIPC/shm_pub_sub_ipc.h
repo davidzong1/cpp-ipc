@@ -25,27 +25,30 @@ namespace dzIPC
     class shm_pub_ipc
     {
     public:
-      explicit shm_pub_ipc(const std::string &topic_name, bool verbose = false);
+      explicit shm_pub_ipc(const std::string &topic_name, const TopicDataPtr &msg, bool verbose = false);
       ~shm_pub_ipc();
-      void InitChannel();
+      void InitChannel(std::string extra_info = "");
       void publish(MsgPtr msg);
       bool has_subscribed() const { return subscribed_; }
+      void reset_message(const TopicDataPtr &msg);
       /* 禁用拷贝 */
       shm_pub_ipc(const shm_pub_ipc &) = delete;
       shm_pub_ipc &operator=(const shm_pub_ipc &) = delete;
 
     private:
-      void sub_listener();
+      void pub_handshake();
+      // void sub_listener();
 
     private:
       std::atomic<bool> subscribed_{false};
       bool verbose_{false};
-      bool running{true};
+      std::atomic<bool> running{true};
       std::string topic_name_;
       std::string raw_topic_name_;
       std::shared_ptr<ipc::route> publisher_;
-      std::thread publish_thread_;
+      std::thread *publish_thread_;
       dzIPC::info_pool::ScopedRegistration pool_reg_;
+      TopicDataPtr topic_msg_;
     };
 
     class shm_sub_ipc
@@ -54,7 +57,7 @@ namespace dzIPC
       explicit shm_sub_ipc(const std::string &topic_name, const TopicDataPtr &msg,
                            const size_t queue_size, bool verbose = false);
       ~shm_sub_ipc();
-      void InitChannel();
+      void InitChannel(std::string extra_info = "");
       void reset_message(const TopicDataPtr &msg);
       void get(MsgPtr &msg);
       bool try_get(MsgPtr &msg);
@@ -63,7 +66,11 @@ namespace dzIPC
       shm_sub_ipc &operator=(const shm_sub_ipc &) = delete;
 
     private:
-      bool running{true};
+      void sub_handshake();
+
+    private:
+      std::atomic<bool> running{true};
+      std::atomic<bool> handshake_completed{false};
       bool data_update_{false};
       bool verbose_{false};
       std::string topic_name_;
@@ -71,7 +78,9 @@ namespace dzIPC
       std::shared_ptr<ipc::route> subscriber_;
       TopicDataPtr topic_msg_;
       std::unique_ptr<CircularQueue<ipc_msg_base>> msg_queue_;
-      std::thread subscribe_thread_;
+      std::thread *subscribe_thread_;
+      std::thread *sub_handshake_thread_;
+      //
       ipc::sync::count_sem *empty_queue_; // 用于通知订阅者消息队列中有新消息
       dzIPC::info_pool::ScopedRegistration pool_reg_;
     };

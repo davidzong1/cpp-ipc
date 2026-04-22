@@ -29,10 +29,11 @@ namespace dzIPC
         class socket_pub_ipc
         {
         public:
-            explicit socket_pub_ipc(const std::string &topic_name, size_t domain_id, bool verbose = false);
+            explicit socket_pub_ipc(const TopicDataPtr &msg, const std::string &topic_name, size_t domain_id, bool verbose = false);
             ~socket_pub_ipc();
-            void InitChannel();
-            void publish(MsgPtr<> msg);
+            void reset_message(const TopicDataPtr &msg);
+            void InitChannel(std::string extra_info = "");
+            bool publish(MsgPtr<> msg);
             bool has_subscribed() const { return subscribed_; }
             bool client_subscribed() const { return cli_cnt; }
             /* 禁用拷贝 */
@@ -40,7 +41,7 @@ namespace dzIPC
             socket_pub_ipc &operator=(const socket_pub_ipc &) = delete;
 
         private:
-            void sub_listener();
+            //     void sub_listener();
 
         private:
             int cli_cnt{0};
@@ -49,13 +50,14 @@ namespace dzIPC
             std::atomic<bool> running{true};
             std::string topic_name_;
             std::shared_ptr<ipc::socket::UDPNode> publisher_;
-            std::thread publish_thread_;
+            std::thread *publish_thread_;
             uint16_t port_hash_;
             std::string ipaddr_;
             size_t domain_id_;
             std::mutex sleep_mtx;
             std::condition_variable sleep_cv;
             dzIPC::info_pool::ScopedRegistration pool_reg_;
+            TopicDataPtr topic_msg_;
         };
 
         class socket_sub_ipc
@@ -63,16 +65,13 @@ namespace dzIPC
         public:
             explicit socket_sub_ipc(const TopicDataPtr &msg, const std::string &topic_name, size_t domain_id, const size_t queue_size, bool verbose = false);
             ~socket_sub_ipc();
-            void InitChannel();
+            void InitChannel(std::string extra_info = "");
             void reset_message(const TopicDataPtr &msg);
             void get(MsgPtr<> &msg);
             bool try_get(MsgPtr<> &msg);
             /* 禁用拷贝 */
             socket_sub_ipc(const socket_sub_ipc &) = delete;
             socket_sub_ipc &operator=(const socket_sub_ipc &) = delete;
-
-        private:
-            void sub_actor();
 
         private:
             std::atomic<bool> subscribed_{false};
@@ -86,9 +85,7 @@ namespace dzIPC
             std::shared_ptr<ipc::socket::UDPNode> subscriber_;
             TopicDataPtr topic_msg_;
             std::unique_ptr<CircularQueue<ipc_msg_base>> msg_queue_;
-            std::thread subscribe_actor_thread_, subscribe_thread_;
-            std::mutex sub_no_mem_sleep_mtx;
-            std::condition_variable sub_no_mem_sleep_cv;
+            std::thread *subscribe_thread_;
             dzIPC::info_pool::ScopedRegistration pool_reg_;
         };
     }

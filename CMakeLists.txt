@@ -35,7 +35,7 @@ option(ENABLE_DEBUG_INFO        "Enable debug info "                            
 option(LIBIPC_BUILD_DEMOS       "Build all of libipc's own demos."                      OFF)
 option(LIBIPC_BUILD_SHARED_LIBS "Build shared libraries (DLLs)."                        OFF)
 option(LIBIPC_USE_STATIC_CRT    "Set to ON to build with static CRT on Windows (/MT)."  OFF)
-option(OPEN_DEBUG_MODE          "Enable debug mode in PROJECT."                         OFF)
+option(OPEN_DEBUG_MODE          "Enable debug mode in PROJECT."                         ON)
 
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)

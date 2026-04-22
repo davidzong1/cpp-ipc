@@ -8,6 +8,7 @@
 #include "dzIPC/ipc_info_pool.h"
 #include "libipc/ipc.h"
 #include <thread>
+#include <atomic>
 namespace dzIPC
 {
   namespace shm
@@ -35,27 +36,29 @@ namespace dzIPC
     {
     public:
       explicit shm_ser_ipc(const std::string &topic_name_, const ServiceDataPtr &msg,
-                           SerCliCallback callback, bool verbose = true);
+                           SerCliCallback callback, bool verbose = false);
       ~shm_ser_ipc();
       void reset_message(const ServiceDataPtr &msg);
       void reset_callback(SerCliCallback callback);
-      void InitChannel();
-      void reset_sync();
+      void InitChannel(std::string extra_info = "");
+
       /* 禁用拷贝 */
       shm_ser_ipc(const shm_ser_ipc &) = delete;
       shm_ser_ipc &operator=(const shm_ser_ipc &) = delete;
 
     protected:
       void response_thread_func();
-      void send_cleanup_broadcast();
+      void ser_handshake();
 
     private:
-      bool running{true};
+      std::atomic<bool> running{true};
+      std::atomic<bool> handshake_completed{false};
       bool verbose_{true};
       SerCliCallback callback_;
       std::string topic_name_;
       ServiceDataPtr message_;
-      std::thread *response_thread_ = nullptr;
+      std::thread *response_thread_{nullptr};
+      std::thread *handshake_thread_{nullptr};
       std::shared_ptr<ipc::server> ipc_r_ptr_;
       std::shared_ptr<ipc::server> ipc_w_ptr_;
       std::vector<char> buf_;
@@ -67,21 +70,21 @@ namespace dzIPC
     {
     public:
       explicit shm_cli_ipc(const std::string &topic_name_, const ServiceDataPtr &msg,
-                           bool verbose = true);
+                           bool verbose = false);
       ~shm_cli_ipc();
-      void InitChannel();
+      void InitChannel(std::string extra_info = "");
       void reset_message(const ServiceDataPtr &msg);
-      void send_request(ServiceDataPtr &request);
-      void reset_sync();
+      bool send_request(ServiceDataPtr &request, uint64_t rev_tm = std::numeric_limits<uint32_t>::max());
       /* 禁用拷贝 */
       shm_cli_ipc(const shm_cli_ipc &) = delete;
       shm_cli_ipc &operator=(const shm_cli_ipc &) = delete;
 
     protected:
-      void rev_cleanup_broadcast();
+      void cli_handshake();
 
     private:
-      bool running{true};
+      std::atomic<bool> running{true};
+      std::atomic<bool> handshake_completed{false};
       bool verbose_{true};
       ServiceDataPtr message_;
       std::string topic_name_;
@@ -89,6 +92,7 @@ namespace dzIPC
       std::shared_ptr<ipc::server> ipc_w_ptr_;
       std::vector<char> buf_;
       std::vector<char> response_buf_;
+      std::thread *handshake_thread_{nullptr};
       dzIPC::info_pool::ScopedRegistration pool_reg_;
     };
   }

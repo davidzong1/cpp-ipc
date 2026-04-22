@@ -12,6 +12,11 @@ namespace dzIPC
 {
   namespace shm
   {
+    enum class State
+    {
+      RunHS,
+      StopHS
+    };
     using namespace ipc;
     /******************************************************************************************************/
     /******************************************************************************************************/
@@ -52,6 +57,15 @@ namespace dzIPC
         {
           response_thread_->join();
         }
+        delete response_thread_;
+      }
+      if (handshake_thread_ != nullptr)
+      {
+        if (handshake_thread_->joinable())
+        {
+          handshake_thread_->join();
+        }
+        delete handshake_thread_;
       }
       if (ipc_r_ptr_ && ipc_r_ptr_->valid())
       {
@@ -65,7 +79,7 @@ namespace dzIPC
     /******************************************************************************************************/
     /******************************************************************************************************/
     /******************************************************************************************************/
-    void shm_ser_ipc::InitChannel()
+    void shm_ser_ipc::InitChannel(std::string extra_info)
     {
       std::string r_name, w_name;
       r_name = "dz_ipc_" + topic_name_ + "_ser_r";
@@ -78,25 +92,28 @@ namespace dzIPC
           std::make_shared<ipc::server>(r_name.c_str(), ipc::receiver, verbose_);
       ipc_w_ptr_ =
           std::make_shared<ipc::server>(w_name.c_str(), ipc::sender, verbose_);
-      send_cleanup_broadcast();
+      handshake_thread_ = new std::thread(&shm_ser_ipc::ser_handshake, this);
+      std::string request_type_name = message_->request() ? dzIPC::info_pool::demangle(typeid(*message_->request()).name()) : std::string{};
+      std::string response_type_name = message_->response() ? dzIPC::info_pool::demangle(typeid(*message_->response()).name()) : std::string{};
       pool_reg_.rebind({dzIPC::info_pool::EntryKind::ShmServer,
                         topic_name_,
-                        message_ ? dzIPC::info_pool::demangle(typeid(*message_).name()) : std::string{},
+                        "request=" + request_type_name + "; response=" + response_type_name,
+                        "shm",
                         /*domain_id=*/0,
-                        "r=" + r_name + ",w=" + w_name});
+                        extra_info});
       std::cerr << "\033[33m[" << topic_name_ << "_Info] Server channel created for topic: " << topic_name_
                 << "\033[0m" << std::endl;
       response_thread_ = new std::thread(&shm_ser_ipc::response_thread_func, this);
-      response_thread_->detach();
     }
     /******************************************************************************************************/
     /******************************************************************************************************/
     /******************************************************************************************************/
 
-    void shm_ser_ipc::send_cleanup_broadcast()
+    void shm_ser_ipc::ser_handshake()
     {
       std::string sem_ser_name = "dz_ipc_" + topic_name_ + "_ser_post";
       std::string sem_cli_name = "dz_ipc_" + topic_name_ + "_cli_post";
+      std::string sem_stop_name = "dz_ipc_" + topic_name_ + "_stop_post";
       ipc::sync::semaphore sem_ser;
       if (!sem_ser.open(sem_ser_name.c_str(), 0))
       {
@@ -108,45 +125,57 @@ namespace dzIPC
         sem_ser.close();
         throw std::runtime_error("sem_open failed");
       }
-      do
+      ipc::sync::semaphore sem_stop;
+      if (!sem_stop.open(sem_stop_name.c_str(), 0))
       {
-        while (sem_ser.try_wait())
-          ;                         // 清空信号量
-        sem_ser.post();             // 发送清理开始信号
-      } while (!sem_cli.wait(100)); // 每隔100ms等待客户端确认清理完成
+        sem_ser.close();
+        sem_cli.close();
+        throw std::runtime_error("sem_open failed");
+      }
+      auto st = State::RunHS;
       while (sem_ser.try_wait())
-        ; // 清空信号量
-      while (sem_cli.try_wait())
-        ; // 清空信号量
-      sem_ser.close();
-      sem_cli.close();
-    }
-    /******************************************************************************************************/
-    /******************************************************************************************************/
-    /******************************************************************************************************/
-    void shm_ser_ipc::reset_sync()
-    {
-      std::string sem_ser_name = "dz_ipc_" + topic_name_ + "_ser_reset_sync";
-      std::string sem_cli_name = "dz_ipc_" + topic_name_ + "_cli_reset_sync";
-      ipc::sync::semaphore sem_ser;
-      if (!sem_ser.open(sem_ser_name.c_str(), 0))
+        ; // 清空服务信号量
+      while (running.load(std::memory_order_acquire))
       {
-        throw std::runtime_error("sem_open failed");
+        if (st == State::RunHS)
+        {
+          while (sem_stop.try_wait())
+            ;
+          while (sem_ser.try_wait())
+            ;             // 清空信号量
+          sem_ser.post(); // 发送清理开始信号
+          if (!sem_cli.wait(100))
+          {
+            continue;
+          }
+          while (sem_ser.try_wait())
+            ; // 清空服务信号量
+          st = State::StopHS;
+          handshake_completed.store(true, std::memory_order_release);
+        }
+        else
+        {
+          if (!sem_stop.wait(100))
+          {
+            continue; // 每隔100ms检查客户端是否发送请求，如果没有则继续等待
+          }
+          else
+          {
+            std::cerr << "\033[33m[" << topic_name_ << "_Info] Client disconnected from server: " << topic_name_
+                      << "\033[0m" << std::endl;
+            st = State::RunHS; // 进入重新连接状态
+            handshake_completed.store(false, std::memory_order_release);
+          }
+        }
       }
-      ipc::sync::semaphore sem_cli;
-      if (!sem_cli.open(sem_cli_name.c_str(), 0))
-      {
-        sem_ser.close();
-        throw std::runtime_error("sem_open failed");
-      }
+      while (sem_stop.try_wait())
+        ; // 清空服务信号量
       if (verbose_)
-        std::cerr << "[" << topic_name_ << "_Info] Server resetting sync." << std::endl;
-      sem_ser.post(); // 发送清理开始信号
-      sem_cli.wait();
-      while (sem_ser.try_wait())
-        ; // 清空信号量
-      while (sem_cli.try_wait())
-        ; // 清空信号量
+      {
+        std::cerr << "\033[33m[" << topic_name_ << "_Info] Server exiting, sending stop signal to client: " << topic_name_
+                  << "\033[0m" << std::endl;
+      }
+      sem_stop.post(); // 发送停止信号，通知客户端退出等待
       sem_ser.close();
       sem_cli.close();
     }
@@ -155,7 +184,7 @@ namespace dzIPC
     /******************************************************************************************************/
     void shm_ser_ipc::response_thread_func()
     {
-      while (running)
+      while (running.load(std::memory_order_acquire))
       {
         /* 服务端等待请求 */
         ipc::buffer raw_data = ipc_r_ptr_->recv(50);
@@ -177,7 +206,15 @@ namespace dzIPC
         message_->request()->deserialize(raw_data);
         callback_(message_);
         ipc::buffer response_data(std::move(message_->response()->serialize()));
-        ipc_w_ptr_->send(response_data.data(), response_data.size());
+        int retry_count = 0;
+        while (!ipc_w_ptr_->try_send(response_data.data(), response_data.size()) && running.load(std::memory_order_acquire))
+        {
+          retry_count++;
+          if (retry_count > 10)
+          {
+            break;
+          }
+        }
       } // 客户段发送请求
     }
     /******************************************************************************************************/
@@ -190,6 +227,15 @@ namespace dzIPC
 
     shm_cli_ipc::~shm_cli_ipc()
     {
+      running.store(false, std::memory_order_release);
+      if (handshake_thread_ != nullptr)
+      {
+        if (handshake_thread_->joinable())
+        {
+          handshake_thread_->join();
+        }
+        delete handshake_thread_;
+      }
       if (ipc_r_ptr_ && ipc_r_ptr_->valid())
       {
         ipc_r_ptr_->release();
@@ -203,15 +249,19 @@ namespace dzIPC
     /******************************************************************************************************/
     /******************************************************************************************************/
 
-    void shm_cli_ipc::InitChannel()
+    void shm_cli_ipc::InitChannel(std::string extra_info)
     {
       // 等待服务端创建通道
-      rev_cleanup_broadcast();
+      handshake_thread_ = new std::thread(&shm_cli_ipc::cli_handshake, this);
+      // 等待握手完成
+      std::string request_type_name = message_->request() ? dzIPC::info_pool::demangle(typeid(*message_->request()).name()) : std::string{};
+      std::string response_type_name = message_->response() ? dzIPC::info_pool::demangle(typeid(*message_->response()).name()) : std::string{};
       pool_reg_.rebind({dzIPC::info_pool::EntryKind::ShmClient,
                         topic_name_,
-                        message_ ? dzIPC::info_pool::demangle(typeid(*message_).name()) : std::string{},
+                        "request=" + request_type_name + "; response=" + response_type_name,
+                        "shm",
                         /*domain_id=*/0,
-                        ""});
+                        extra_info});
       if (verbose_)
       {
         std::cerr << "\033[33m[" << topic_name_
@@ -223,10 +273,11 @@ namespace dzIPC
     /******************************************************************************************************/
     /******************************************************************************************************/
 
-    void shm_cli_ipc::rev_cleanup_broadcast()
+    void shm_cli_ipc::cli_handshake()
     {
       std::string sem_ser_name = "dz_ipc_" + topic_name_ + "_ser_post";
       std::string sem_cli_name = "dz_ipc_" + topic_name_ + "_cli_post";
+      std::string sem_stop_name = "dz_ipc_" + topic_name_ + "_stop_post";
       ipc::sync::semaphore sem_ser;
       if (!sem_ser.open(sem_ser_name.c_str(), 0))
       {
@@ -238,52 +289,100 @@ namespace dzIPC
         sem_ser.close();
         throw std::runtime_error("sem_open failed");
       }
-      while (sem_cli.try_wait())
-        ;             // 清空信号量
-      sem_ser.wait(); // 等待服务端发送清理开始信号
-      // 创建新的通道
-      std::string r_name, w_name;
-      r_name = "dz_ipc_" + topic_name_ + "_ser_w";
-      w_name = "dz_ipc_" + topic_name_ + "_ser_r";
-      ipc_r_ptr_ =
-          std::make_shared<ipc::server>(r_name.c_str(), ipc::receiver, verbose_);
-      ipc_w_ptr_ =
-          std::make_shared<ipc::server>(w_name.c_str(), ipc::sender, verbose_);
-      sem_cli.post(); // 通知服务端清理完成
+      ipc::sync::semaphore sem_stop;
+      if (!sem_stop.open(sem_stop_name.c_str(), 0))
+      {
+        sem_ser.close();
+        sem_cli.close();
+        throw std::runtime_error("sem_open failed");
+      }
+      auto st = State::RunHS;
+      while (sem_ser.try_wait())
+        ; // 清空服务信号量
+      while (running.load(std::memory_order_acquire))
+      {
+        if (st == State::RunHS)
+        {
+          while (sem_stop.try_wait())
+            ;
+          while (sem_cli.try_wait())
+            ; // 清空信号量
+          if (!sem_ser.wait(100))
+          {
+            continue;
+          } // 等待服务端发送清理开始信号
+          // 创建新的通道
+          std::string r_name, w_name;
+          r_name = "dz_ipc_" + topic_name_ + "_ser_w";
+          w_name = "dz_ipc_" + topic_name_ + "_ser_r";
+          ipc_r_ptr_ =
+              std::make_shared<ipc::server>(r_name.c_str(), ipc::receiver, verbose_);
+          ipc_w_ptr_ =
+              std::make_shared<ipc::server>(w_name.c_str(), ipc::sender, verbose_);
+          sem_cli.post(); // 通知服务端连接完成
+          st = State::StopHS;
+          handshake_completed.store(true, std::memory_order_release);
+        }
+        else
+        {
+          if (!sem_stop.wait(100)) // 等待服务端发送停止信号，若没有则继续等待
+          {
+            continue;
+          }
+          st = State::RunHS; // 进入重新连接状态
+          handshake_completed.store(false, std::memory_order_release);
+        }
+      }
+      while (sem_stop.try_wait())
+        ;
+      if (verbose_)
+      {
+        std::cerr << "\033[33m[" << topic_name_ << "_Info] Client exiting, sending stop signal to server: " << topic_name_
+                  << "\033[0m" << std::endl;
+      }
+      sem_stop.post(); // 发送停止信号，通知服务端退出等待
       sem_ser.close();
       sem_cli.close();
     }
     /******************************************************************************************************/
     /******************************************************************************************************/
     /******************************************************************************************************/
-    void shm_cli_ipc::send_request(ServiceDataPtr &request)
+    bool shm_cli_ipc::send_request(ServiceDataPtr &request, uint64_t rev_tm)
     {
-      ipc::buffer request_data(std::move(request->request()->serialize()));
-      int retry_count = 0;
-      while (ipc_w_ptr_->send(request_data.data(), request_data.size()) == false)
-      {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        if (retry_count >= 10)
-        {
-          return;
-        }
-        retry_count++;
-      };
-
-      ipc::buffer raw_response = ipc_r_ptr_->recv();
-      if (!message_->check_msg_id(raw_response))
+      /* 主线程执行，因此无需考虑running */
+      if (!handshake_completed.load(std::memory_order_acquire))
       {
         if (verbose_)
         {
-          std::cerr << "\033[31m[Warning] Response message with invalid ID on topic: "
+          std::cerr << "\033[32m[Warning] Handshake not completed, cannot send request on topic: "
                     << topic_name_ << "\033[0m" << std::endl;
         }
+        return false;
       }
-      else
+      ipc::buffer request_data(std::move(request->request()->serialize()));
+      int retry_count = 0;
+      while (!ipc_w_ptr_->try_send(request_data.data(), request_data.size()))
       {
-        request->response()->deserialize(raw_response);
-      }
-      /* 反序列转换为msg数据 */
+        retry_count++;
+        if (retry_count > 10)
+        {
+          return false;
+        }
+      };
+      do
+      {
+        ipc::buffer raw_response = ipc_r_ptr_->recv(rev_tm);
+        if (raw_response.empty()) // 超时未收到响应
+        {
+          return false;
+        }
+        if (message_->check_msg_id(raw_response)) // 收到响应且ID正确,否则重新接收
+        {
+          request->response()->deserialize(raw_response);
+          break;
+        }
+      } while (true);
+      return true;
     }
     /******************************************************************************************************/
     /******************************************************************************************************/
@@ -291,31 +390,6 @@ namespace dzIPC
     void shm_cli_ipc::reset_message(const ServiceDataPtr &msg)
     {
       message_.reset(msg->clone());
-    }
-    /******************************************************************************************************/
-    /******************************************************************************************************/
-    /******************************************************************************************************/
-    void shm_cli_ipc::reset_sync()
-    {
-      std::string sem_ser_name = "dz_ipc_" + topic_name_ + "_ser_reset_sync";
-      std::string sem_cli_name = "dz_ipc_" + topic_name_ + "_cli_reset_sync";
-      ipc::sync::semaphore sem_ser;
-      if (sem_ser.open(sem_ser_name.c_str(), 0))
-      {
-        throw std::runtime_error("sem_open failed");
-      }
-      ipc::sync::semaphore sem_cli;
-      if (sem_cli.open(sem_cli_name.c_str(), 0))
-      {
-        sem_ser.close();
-        throw std::runtime_error("sem_open failed");
-      }
-      if (verbose_)
-        std::cerr << "[ShmIPCNode] Client resetting sync." << std::endl;
-      sem_ser.wait(); // 等待服务端发送清理开始信号
-      sem_cli.post(); // 通知服务端清理完成
-      sem_ser.close();
-      sem_cli.close();
     }
   }
 } // namespace dzIPC

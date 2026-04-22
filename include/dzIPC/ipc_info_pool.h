@@ -43,6 +43,7 @@ namespace dzIPC
             EntryKind kind{EntryKind::Unknown};
             std::string topic_name;
             std::string type_name;
+            std::string ipc_mode;
             int32_t domain_id{0};
             std::string extra;
         };
