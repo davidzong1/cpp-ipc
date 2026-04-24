@@ -31,14 +31,6 @@ namespace dzIPC
                 running.store(false, std::memory_order_release);
             }
             sleep_cv.notify_all(); // 立即唤醒正在 wait_for 的线程
-            if (publish_thread_ != nullptr)
-            {
-                if (publish_thread_->joinable())
-                {
-                    publish_thread_->join();
-                }
-                delete publish_thread_;
-            }
             if (publisher_)
             {
                 publisher_->close();
@@ -73,7 +65,6 @@ namespace dzIPC
                                   "socket",
                                   static_cast<int32_t>(domain_id_),
                                   extra_info});
-                // publish_thread_ = std::thread(&socket_pub_ipc::sub_listener, this);
             }
             catch (const std::exception &e)
             {

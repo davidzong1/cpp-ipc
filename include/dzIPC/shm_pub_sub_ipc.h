@@ -28,7 +28,7 @@ namespace dzIPC
       explicit shm_pub_ipc(const std::string &topic_name, const TopicDataPtr &msg, bool verbose = false);
       ~shm_pub_ipc();
       void InitChannel(std::string extra_info = "");
-      void publish(MsgPtr msg);
+      bool publish(MsgPtr msg);
       bool has_subscribed() const { return subscribed_; }
       void reset_message(const TopicDataPtr &msg);
       /* 禁用拷贝 */

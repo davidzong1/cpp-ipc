@@ -238,25 +238,35 @@ namespace dzIPC
 
     void socket_cli_ipc::InitChannel(std::string extra_info)
     {
-      // 等待服务端创建通道
-      std::string request_type_name = message_->request() ? dzIPC::info_pool::demangle(typeid(*message_->request()).name()) : std::string{};
-      std::string response_type_name = message_->response() ? dzIPC::info_pool::demangle(typeid(*message_->response()).name()) : std::string{};
-      if (verbose_)
+      try
       {
-        std::cerr << "\033[32m[" << topic_name_ << "CliInfo] Request initialized on IP: " << this->ipaddr_ << " Port: " << this->port_hash_ << " for topic: " << topic_name_ << "\033[0m" << std::endl;
-        std::cerr << "\033[32m[" << topic_name_ << "CliInfo] Response initialized on IP: " << this->ipaddr_ << " Port: " << this->port_hash_ + 1 << " for topic: " << topic_name_ << "\033[0m" << std::endl;
+        ipc_r_ptr_ = std::make_shared<ipc::socket::UDPNode>(this->topic_name_.c_str(), this->ipaddr_.c_str(), this->port_hash_);
+        ipc_w_ptr_ = std::make_shared<ipc::socket::UDPNode>(this->topic_name_.c_str(), this->ipaddr_.c_str(), this->port_hash_ + 1);
+        if (verbose_)
+        {
+          std::cerr << "\033[32m[" << topic_name_ << "CliInfo] Request initialized on IP: " << this->ipaddr_ << " Port: " << this->port_hash_ << " for topic: " << topic_name_ << "\033[0m" << std::endl;
+          std::cerr << "\033[32m[" << topic_name_ << "CliInfo] Response initialized on IP: " << this->ipaddr_ << " Port: " << this->port_hash_ + 1 << " for topic: " << topic_name_ << "\033[0m" << std::endl;
+        }
+        while (!ipc_r_ptr_->connect())
+        {
+          std::cerr << "\033[31m[" << topic_name_ << "CliInfo] Failed to connect request UDP,reconnect affter 1 second...\033[0m" << std::endl;
+          std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+        while (!ipc_w_ptr_->connect())
+        {
+          std::cerr << "\033[31m[" << topic_name_ << "CliInfo] Failed to connect response UDP,reconnect affter 1 second...\033[0m" << std::endl;
+          std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
       }
-      while (!ipc_r_ptr_->connect())
+      catch (const std::exception &e)
       {
-        std::cerr << "\033[31m[" << topic_name_ << "CliInfo] Failed to connect request UDP,reconnect affter 1 second...\033[0m" << std::endl;
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-      }
-      while (!ipc_w_ptr_->connect())
-      {
-        std::cerr << "\033[31m[" << topic_name_ << "CliInfo] Failed to connect response UDP,reconnect affter 1 second...\033[0m" << std::endl;
-        std::this_thread::sleep_for(std::chrono::seconds(1));
+        std::cerr << "\033[31m[" << topic_name_ << "CliInfo] Error initializing channel: " << e.what() << "\033[0m"
+                  << std::endl;
+        return;
       }
       handshake_thread_ = new std::thread(&socket_cli_ipc::client_handshake, this);
+      std::string request_type_name = message_->request() ? dzIPC::info_pool::demangle(typeid(*message_->request()).name()) : std::string{};
+      std::string response_type_name = message_->response() ? dzIPC::info_pool::demangle(typeid(*message_->response()).name()) : std::string{};
       pool_reg_.rebind({dzIPC::info_pool::EntryKind::ShmClient,
                         topic_name_,
                         "request=" + request_type_name + "; response=" + response_type_name,
@@ -359,7 +369,7 @@ namespace dzIPC
                     << std::endl;
           return false;
         }
-        if (!chunk_rev_server(ipc_w_ptr_, message_, ServerRevTime, false))
+        if (!chunk_rev_server(ipc_w_ptr_, request, ServerRevTime, false))
         {
           std::cerr << "\033[31m[" << topic_name_ << "CliInfo] Error receiving response: Failed to receive or parse response\033[0m" << std::endl;
           return false;

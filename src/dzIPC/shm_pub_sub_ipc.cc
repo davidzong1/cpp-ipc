@@ -180,31 +180,31 @@ namespace dzIPC
     /******************************************************************************************************/
     /******************************************************************************************************/
     /******************************************************************************************************/
-    void shm_pub_ipc::publish(MsgPtr msg)
+    bool shm_pub_ipc::publish(MsgPtr msg)
     {
       try
       {
-        // if (subscribed_.load(std::memory_order_acquire))
+        ipc::buffer response_data(std::move(msg->serialize()));
+        int retry_count = 0;
+        // no member pass
+        while (!publisher_->no_member_try_send(response_data.data(), response_data.size()))
         {
-          ipc::buffer response_data(std::move(msg->serialize()));
-          int retry_count = 0;
-          while (!publisher_->try_send(response_data.data(), response_data.size()) && running.load(std::memory_order_acquire))
+          retry_count++;
+          if (retry_count > 10)
           {
-            retry_count++;
-            if (retry_count > 10)
-            {
-              std::cerr << "\033[31m[" << topic_name_ << "PubInfo] Warning: Failed to publish message after 10 attempts on topic: "
-                        << topic_name_ << "\033[0m" << std::endl;
-              break;
-            }
-          };
-        }
+            std::cerr << "\033[31m[" << topic_name_ << "PubInfo] Warning: Failed to publish message after 10 attempts on topic: "
+                      << topic_name_ << "\033[0m" << std::endl;
+            break;
+          }
+        };
+        return true;
       }
       catch (const std::exception &e)
       {
         std::cerr << "\033[31m[" << topic_name_ << "PubInfo] Error publishing message: " << e.what() << "\033[0m"
                   << std::endl;
       }
+      return false;
     }
     /******************************************************************************************************/
     /******************************************************************************************************/

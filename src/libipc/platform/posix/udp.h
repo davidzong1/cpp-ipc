@@ -179,7 +179,7 @@ namespace ipc
                             ssize_t received = ::recvfrom(server_fd, temp_buffer.data(), temp_buffer.size(), MSG_DONTWAIT, nullptr, nullptr);
                             if (received >= 0)
                             {
-                                return ipc::buffer(temp_buffer.data(), received);
+                                return ipc::buffer(temp_buffer.data(), received, nullptr);
                             }
                             if ((errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK) && ++err_cnt < 10)
                             {

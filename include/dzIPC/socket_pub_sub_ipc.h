@@ -50,7 +50,6 @@ namespace dzIPC
             std::atomic<bool> running{true};
             std::string topic_name_;
             std::shared_ptr<ipc::socket::UDPNode> publisher_;
-            std::thread *publish_thread_;
             uint16_t port_hash_;
             std::string ipaddr_;
             size_t domain_id_;
