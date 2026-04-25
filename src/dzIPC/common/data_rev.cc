@@ -6,16 +6,19 @@
 #include <thread>
 #include <unordered_set>
 #include <vector>
+
 namespace dzIPC
 {
     namespace socket
     {
-#define UDP_MAX_SIZE 1472
         namespace
         {
+            constexpr std::size_t UDP_MAX_SIZE = 1472;
             constexpr std::size_t TAIL_SIZE = 12;
+            constexpr std::size_t MAX_RECV_TOTAL_SIZE = 64 * 1024 * 1024;
             constexpr int SEND_RETRY_MAX = 10;
-            constexpr int RTPS_MAX_NACK_ROUND = 3;
+            constexpr int RTPS_MAX_NACK_ROUND = 5;
+            constexpr int SEND_BURST_BEFORE_YIELD = 64;
 
             struct chunk_meta
             {
@@ -34,6 +37,13 @@ namespace dzIPC
                 return id;
             }
 
+            uint64_t elapsed_ms(const std::chrono::steady_clock::time_point &begin)
+            {
+                return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                 std::chrono::steady_clock::now() - begin)
+                                                 .count());
+            }
+
             bool parse_tail(const ipc::buffer &buf, ipc_tail_msg &tail)
             {
                 if (buf.size() < TAIL_SIZE)
@@ -41,36 +51,77 @@ namespace dzIPC
                     return false;
                 }
 
-                const auto *data_ptr = static_cast<const uint8_t *>(buf.data());
-                const size_t data_len = buf.size();
-                tail.page_cnt = static_cast<uint16_t>(data_ptr[data_len - 12]) << 8 |
-                                static_cast<uint16_t>(data_ptr[data_len - 11]);
-                tail.now_page = static_cast<uint16_t>(data_ptr[data_len - 10]) << 8 |
-                                static_cast<uint16_t>(data_ptr[data_len - 9]);
-                tail.total_size = static_cast<uint32_t>(data_ptr[data_len - 8]) << 24 |
-                                  static_cast<uint32_t>(data_ptr[data_len - 7]) << 16 |
-                                  static_cast<uint32_t>(data_ptr[data_len - 6]) << 8 |
-                                  static_cast<uint32_t>(data_ptr[data_len - 5]);
-                tail.dz_ipc_msg_id = static_cast<uint32_t>(data_ptr[data_len - 4]) << 24 |
-                                     static_cast<uint32_t>(data_ptr[data_len - 3]) << 16 |
-                                     static_cast<uint32_t>(data_ptr[data_len - 2]) << 8 |
-                                     static_cast<uint32_t>(data_ptr[data_len - 1]);
+                const auto *p = static_cast<const uint8_t *>(buf.data());
+                const std::size_t n = buf.size();
+                tail.page_cnt = static_cast<uint16_t>(p[n - 12]) << 8 |
+                                static_cast<uint16_t>(p[n - 11]);
+                tail.now_page = static_cast<uint16_t>(p[n - 10]) << 8 |
+                                static_cast<uint16_t>(p[n - 9]);
+                tail.total_size = static_cast<uint32_t>(p[n - 8]) << 24 |
+                                  static_cast<uint32_t>(p[n - 7]) << 16 |
+                                  static_cast<uint32_t>(p[n - 6]) << 8 |
+                                  static_cast<uint32_t>(p[n - 5]);
+                tail.dz_ipc_msg_id = static_cast<uint32_t>(p[n - 4]) << 24 |
+                                     static_cast<uint32_t>(p[n - 3]) << 16 |
+                                     static_cast<uint32_t>(p[n - 2]) << 8 |
+                                     static_cast<uint32_t>(p[n - 1]);
                 return true;
             }
 
-            bool copy_page_to_buffer(const ipc::buffer &page_buf,
-                                     const chunk_meta &meta,
-                                     std::vector<uint8_t> &assemble,
-                                     std::vector<uint8_t> &received,
-                                     std::size_t &received_cnt)
+            void write_now_page(ipc::buffer &chunk, uint16_t now_page)
+            {
+                if (chunk.size() < TAIL_SIZE)
+                {
+                    return;
+                }
+                auto *p = static_cast<uint8_t *>(chunk.data());
+                const std::size_t n = chunk.size();
+                p[n - 10] = static_cast<uint8_t>(now_page >> 8);
+                p[n - 9] = static_cast<uint8_t>(now_page & 0xFF);
+            }
+
+            bool valid_chunk_meta(const ipc_tail_msg &tail)
+            {
+                if (tail.page_cnt == 0 || tail.total_size < TAIL_SIZE)
+                {
+                    return false;
+                }
+                if (tail.total_size > MAX_RECV_TOTAL_SIZE)
+                {
+                    return false;
+                }
+
+                const std::size_t page_cnt = static_cast<std::size_t>(tail.page_cnt);
+                const std::size_t total_size = static_cast<std::size_t>(tail.total_size);
+                const std::size_t max_total = page_cnt * UDP_MAX_SIZE;
+                const std::size_t min_total = (page_cnt == 0) ? TAIL_SIZE : ((page_cnt - 1) * UDP_MAX_SIZE + TAIL_SIZE);
+                return total_size >= min_total && total_size <= max_total;
+            }
+
+            std::size_t expected_page_size(const chunk_meta &meta, uint16_t now_page)
+            {
+                if (now_page == meta.page_cnt)
+                {
+                    const std::size_t offset = static_cast<std::size_t>(now_page - 1) * UDP_MAX_SIZE;
+                    return static_cast<std::size_t>(meta.total_size) - offset;
+                }
+                return UDP_MAX_SIZE;
+            }
+
+            bool place_page(const ipc::buffer &page_buf,
+                            const chunk_meta &meta,
+                            std::vector<uint8_t> &assembled,
+                            std::vector<uint8_t> &received,
+                            std::size_t &received_cnt)
             {
                 ipc_tail_msg tail;
                 if (!parse_tail(page_buf, tail))
                 {
                     return false;
                 }
-
-                if (tail.page_cnt != meta.page_cnt || tail.total_size != meta.total_size || tail.dz_ipc_msg_id != meta.msg_id)
+                if (tail.page_cnt != meta.page_cnt ||
+                    tail.total_size != meta.total_size ||
+                    tail.dz_ipc_msg_id != meta.msg_id)
                 {
                     return false;
                 }
@@ -78,9 +129,10 @@ namespace dzIPC
                 {
                     return false;
                 }
-                const std::size_t payload_size = page_buf.size();
-                const std::size_t offset = static_cast<std::size_t>(tail.now_page - 1) * UDP_MAX_SIZE;
-                if (offset + payload_size > meta.total_size || payload_size > UDP_MAX_SIZE)
+
+                const std::size_t payload = page_buf.size();
+                const std::size_t expected = expected_page_size(meta, tail.now_page);
+                if (payload != expected)
                 {
                     return false;
                 }
@@ -90,68 +142,166 @@ namespace dzIPC
                     return true;
                 }
 
-                std::memcpy(assemble.data() + offset, page_buf.data(), payload_size);
+                const std::size_t offset = static_cast<std::size_t>(tail.now_page - 1) * UDP_MAX_SIZE;
+                std::memcpy(assembled.data() + offset, page_buf.data(), payload);
                 received[tail.now_page] = 1;
                 ++received_cnt;
                 return true;
             }
 
-            uint64_t elapsed_ms(const std::chrono::steady_clock::time_point &begin)
+            uint64_t calc_round_wait_ms(uint16_t page_cnt, uint64_t tm)
             {
-                return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - begin).count());
+                const uint64_t by_pages =
+                    std::max<uint64_t>(20, std::min<uint64_t>(200, static_cast<uint64_t>(page_cnt) * 4));
+                if (tm == ipc::invalid_value)
+                {
+                    return by_pages;
+                }
+                const uint64_t by_budget =
+                    std::max<uint64_t>(10, tm / static_cast<uint64_t>(RTPS_MAX_NACK_ROUND + 1));
+                return std::min(by_pages, by_budget);
             }
 
-            bool recv_chunk_common(std::shared_ptr<ipc::socket::UDPNode> &node, std::shared_ptr<ipc_msg_base> &msg_ptr, uint64_t tm)
+            uint64_t calc_nack_wait_ms(uint16_t page_cnt)
             {
-                const auto begin = std::chrono::steady_clock::now();
-                auto remain_ms = [&]() -> uint64_t
+                return std::max<uint64_t>(20, std::min<uint64_t>(200, static_cast<uint64_t>(page_cnt) * 4));
+            }
+
+            bool send_chunk_with_retry(std::shared_ptr<ipc::socket::UDPNode> &node, ipc::buffer &chunk)
+            {
+                int retry = 0;
+                while (!node->send(chunk))
                 {
-                    if (tm == ipc::invalid_value)
+                    if (++retry >= SEND_RETRY_MAX)
                     {
-                        return tm;
+                        return false;
                     }
-                    const uint64_t used = elapsed_ms(begin);
-                    return used >= tm ? 0 : (tm - used);
-                };
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                }
+                return true;
+            }
 
-                chunk_meta meta{};
-                ipc::buffer first_page;
-                ipc_rtps_nack_msg nack_msg;
+            bool send_all_chunks(std::shared_ptr<ipc::socket::UDPNode> &node,
+                                 std::vector<ipc::buffer> &chunks)
+            {
+                for (std::size_t i = 0; i < chunks.size(); ++i)
+                {
+                    if (!send_chunk_with_retry(node, chunks[i]))
+                    {
+                        return false;
+                    }
+                    if (((i + 1) % SEND_BURST_BEFORE_YIELD) == 0 && (i + 1) < chunks.size())
+                    {
+                        std::this_thread::sleep_for(std::chrono::microseconds(50));
+                    }
+                }
+                return true;
+            }
 
+            bool wait_first_data_chunk(std::shared_ptr<ipc::socket::UDPNode> &node,
+                                       std::shared_ptr<ipc_msg_base> &msg_ptr,
+                                       chunk_meta &meta,
+                                       ipc::buffer &first_page,
+                                       const std::chrono::steady_clock::time_point &begin,
+                                       uint64_t tm)
+            {
                 while (true)
                 {
-                    const uint64_t rem = remain_ms();
-                    if (tm != ipc::invalid_value && rem == 0)
+                    uint64_t wait_ms = tm;
+                    if (tm != ipc::invalid_value)
+                    {
+                        const uint64_t used = elapsed_ms(begin);
+                        if (used >= tm)
+                        {
+                            return false;
+                        }
+                        wait_ms = tm - used;
+                    }
+
+                    ipc::buffer buf = node->receive(wait_ms);
+                    if (buf.empty())
                     {
                         return false;
                     }
-
-                    ipc::buffer cache_buffer = node->receive(rem);
-                    if (cache_buffer.empty())
-                    {
-                        return false;
-                    }
-
-                    if (!msg_ptr->check_id(cache_buffer))
+                    if (!msg_ptr->check_id(buf))
                     {
                         continue;
                     }
 
                     ipc_tail_msg tail;
-                    if (!parse_tail(cache_buffer, tail) || tail.page_cnt == 0 || tail.total_size == 0)
+                    if (!parse_tail(buf, tail) || !valid_chunk_meta(tail))
                     {
                         continue;
                     }
 
-                    first_page = std::move(cache_buffer);
-                    meta.page_cnt = tail.page_cnt;
-                    meta.total_size = tail.total_size;
-                    meta.msg_id = tail.dz_ipc_msg_id;
-                    break;
+                    if (tail.now_page == 0 || tail.now_page > tail.page_cnt)
+                    {
+                        continue;
+                    }
+
+                    chunk_meta tentative{tail.page_cnt, tail.total_size, tail.dz_ipc_msg_id};
+                    if (buf.size() != expected_page_size(tentative, tail.now_page))
+                    {
+                        continue;
+                    }
+
+                    meta = tentative;
+                    first_page = std::move(buf);
+                    return true;
+                }
+            }
+
+            void send_nack_for_missing(std::shared_ptr<ipc::socket::UDPNode> &node,
+                                       const chunk_meta &meta,
+                                       const std::vector<uint8_t> &received,
+                                       ipc_rtps_nack_msg &nack_msg)
+            {
+                nack_msg.page_cnt = meta.page_cnt;
+                nack_msg.total_size = meta.total_size;
+                nack_msg.data_msg_id = meta.msg_id;
+                nack_msg.receiver_id = local_node_id();
+                nack_msg.missing_pages.clear();
+
+                for (uint16_t i = 1; i <= meta.page_cnt; ++i)
+                {
+                    if (received[i] == 0)
+                    {
+                        nack_msg.missing_pages.push_back(i);
+                        if (nack_msg.missing_pages.size() >= ipc_rtps_nack_msg::kMaxMissingPages)
+                        {
+                            break;
+                        }
+                    }
+                }
+
+                if (nack_msg.missing_pages.empty())
+                {
+                    return;
+                }
+
+                ipc::buffer nack_buf = nack_msg.serialize();
+                send_chunk_with_retry(node, nack_buf);
+            }
+
+            bool recv_chunk_common(std::shared_ptr<ipc::socket::UDPNode> &node,
+                                   std::shared_ptr<ipc_msg_base> &msg_ptr,
+                                   uint64_t tm)
+            {
+                const auto begin = std::chrono::steady_clock::now();
+
+                chunk_meta meta{};
+                ipc::buffer first_page;
+                if (!wait_first_data_chunk(node, msg_ptr, meta, first_page, begin, tm))
+                {
+                    return false;
                 }
 
                 if (meta.page_cnt == 1)
                 {
+                    if (first_page.size() != meta.total_size)
+                    {
+                        return false;
+                    }
                     msg_ptr->deserialize(first_page);
                     return true;
                 }
@@ -159,21 +309,37 @@ namespace dzIPC
                 std::vector<uint8_t> assembled(meta.total_size);
                 std::vector<uint8_t> received(static_cast<std::size_t>(meta.page_cnt) + 1, 0);
                 std::size_t received_cnt = 0;
-                copy_page_to_buffer(first_page, meta, assembled, received, received_cnt);
+                if (!place_page(first_page, meta, assembled, received, received_cnt))
+                {
+                    return false;
+                }
 
-                const uint64_t round_wait_ms = tm == ipc::invalid_value ? 50 : std::max<uint64_t>(5, tm);
+                const uint64_t round_wait_ms = calc_round_wait_ms(meta.page_cnt, tm);
+                ipc_rtps_nack_msg nack_msg;
+
                 for (int round = 0; round < RTPS_MAX_NACK_ROUND && received_cnt < meta.page_cnt; ++round)
                 {
                     const auto round_begin = std::chrono::steady_clock::now();
                     while (received_cnt < meta.page_cnt)
                     {
-                        const uint64_t round_elapsed = elapsed_ms(round_begin);
-                        if (round_elapsed >= round_wait_ms)
+                        const uint64_t round_used = elapsed_ms(round_begin);
+                        if (round_used >= round_wait_ms)
                         {
                             break;
                         }
 
-                        ipc::buffer page = node->receive(round_wait_ms - round_elapsed);
+                        uint64_t wait_ms = round_wait_ms - round_used;
+                        if (tm != ipc::invalid_value)
+                        {
+                            const uint64_t used = elapsed_ms(begin);
+                            if (used >= tm)
+                            {
+                                return false;
+                            }
+                            wait_ms = std::min(wait_ms, tm - used);
+                        }
+
+                        ipc::buffer page = node->receive(wait_ms);
                         if (page.empty())
                         {
                             break;
@@ -183,7 +349,7 @@ namespace dzIPC
                             continue;
                         }
 
-                        copy_page_to_buffer(page, meta, assembled, received, received_cnt);
+                        place_page(page, meta, assembled, received, received_cnt);
                     }
 
                     if (received_cnt >= meta.page_cnt)
@@ -191,36 +357,12 @@ namespace dzIPC
                         break;
                     }
 
-                    nack_msg.page_cnt = meta.page_cnt;
-                    nack_msg.total_size = meta.total_size;
-                    nack_msg.data_msg_id = meta.msg_id;
-                    nack_msg.receiver_id = local_node_id();
-                    nack_msg.missing_pages.clear();
-
-                    for (uint16_t i = 1; i <= meta.page_cnt; ++i)
+                    if (tm != ipc::invalid_value && elapsed_ms(begin) >= tm)
                     {
-                        if (received[i] == 0)
-                        {
-                            nack_msg.missing_pages.push_back(i);
-                            if (nack_msg.missing_pages.size() >= ipc_rtps_nack_msg::kMaxMissingPages)
-                            {
-                                break;
-                            }
-                        }
+                        return false;
                     }
 
-                    if (nack_msg.missing_pages.empty())
-                    {
-                        break;
-                    }
-
-                    ipc::buffer nack_buf = nack_msg.serialize();
-                    int send_retry = 0;
-                    while (!node->send(nack_buf) && send_retry < SEND_RETRY_MAX)
-                    {
-                        ++send_retry;
-                        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                    }
+                    send_nack_for_missing(node, meta, received, nack_msg);
                 }
 
                 if (received_cnt < meta.page_cnt)
@@ -228,8 +370,8 @@ namespace dzIPC
                     return false;
                 }
 
-                ipc::buffer total_buffer_cache(assembled.data(), meta.total_size);
-                msg_ptr->deserialize(total_buffer_cache);
+                ipc::buffer assembled_view(assembled.data(), meta.total_size);
+                msg_ptr->deserialize(assembled_view);
                 return true;
             }
         }
@@ -237,13 +379,15 @@ namespace dzIPC
         /******************************************************************************************************/
         /******************************************************************************************************/
         /******************************************************************************************************/
-        bool chunk_rev_topic(std::shared_ptr<ipc::socket::UDPNode> &node, std::shared_ptr<TopicData> &rev_msg, uint64_t tm)
+        bool chunk_rev_topic(std::shared_ptr<ipc::socket::UDPNode> &node,
+                             std::shared_ptr<TopicData> &rev_msg, uint64_t tm)
         {
             std::shared_ptr<ipc_msg_base> msg_ptr = rev_msg->topic();
             return recv_chunk_common(node, msg_ptr, tm);
         }
 
-        bool chunk_rev_server(std::shared_ptr<ipc::socket::UDPNode> &node, std::shared_ptr<ServiceData> &rev_msg, uint64_t tm, bool ser_or_cli)
+        bool chunk_rev_server(std::shared_ptr<ipc::socket::UDPNode> &node,
+                              std::shared_ptr<ServiceData> &rev_msg, uint64_t tm, bool ser_or_cli)
         {
             std::shared_ptr<ipc_msg_base> msg_ptr = ser_or_cli ? rev_msg->request() : rev_msg->response();
             return recv_chunk_common(node, msg_ptr, tm);
@@ -251,26 +395,41 @@ namespace dzIPC
 
         bool chunk_send(std::shared_ptr<ipc::socket::UDPNode> &node, ipc::buffer &publish_data)
         {
+            if (publish_data.empty() || publish_data.size() < TAIL_SIZE)
+            {
+                return false;
+            }
+
             std::vector<ipc::buffer> chunks;
             chunks.reserve((publish_data.size() + UDP_MAX_SIZE - 1) / UDP_MAX_SIZE);
             for (std::size_t offset = 0; offset < publish_data.size(); offset += UDP_MAX_SIZE)
             {
-                std::size_t chunk_size = std::min(static_cast<std::size_t>(UDP_MAX_SIZE), publish_data.size() - offset);
-                chunks.emplace_back(static_cast<uint8_t *>(publish_data.data()) + offset, chunk_size);
+                const std::size_t sz = std::min(UDP_MAX_SIZE, publish_data.size() - offset);
+                chunks.emplace_back(static_cast<uint8_t *>(publish_data.data()) + offset, sz);
             }
 
-            for (auto &chunk : chunks)
+            for (std::size_t i = 0; i < chunks.size(); ++i)
             {
-                int retry_count = 0;
-                while (!node->send(chunk))
+                if (chunks[i].size() < TAIL_SIZE)
                 {
-                    ++retry_count;
-                    if (retry_count >= SEND_RETRY_MAX)
-                    {
-                        return false;
-                    }
-                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                    return false;
                 }
+                write_now_page(chunks[i], static_cast<uint16_t>(i + 1));
+            }
+
+            ipc_tail_msg first_tail;
+            if (!parse_tail(chunks.front(), first_tail) || !valid_chunk_meta(first_tail))
+            {
+                return false;
+            }
+            if (static_cast<std::size_t>(first_tail.page_cnt) != chunks.size())
+            {
+                return false;
+            }
+
+            if (!send_all_chunks(node, chunks))
+            {
+                return false;
             }
 
             if (chunks.size() <= 1)
@@ -278,25 +437,24 @@ namespace dzIPC
                 return true;
             }
 
-            ipc_tail_msg first_tail;
-            if (!parse_tail(chunks.front(), first_tail))
-            {
-                return true;
-            }
-
-            chunk_meta meta{first_tail.page_cnt, first_tail.total_size, first_tail.dz_ipc_msg_id};
+            const chunk_meta meta{first_tail.page_cnt, first_tail.total_size, first_tail.dz_ipc_msg_id};
+            const uint64_t nack_wait_ms = calc_nack_wait_ms(meta.page_cnt);
             ipc_rtps_nack_msg nack_msg;
-            const uint64_t nack_wait_ms = std::max<uint64_t>(6, std::min<uint64_t>(40, static_cast<uint64_t>(meta.page_cnt) * 2));
 
             for (int round = 0; round < RTPS_MAX_NACK_ROUND; ++round)
             {
-                bool has_valid_nack = false;
+                bool got_nack = false;
                 std::unordered_set<uint16_t> missing_union;
                 const auto round_begin = std::chrono::steady_clock::now();
 
-                while (elapsed_ms(round_begin) < nack_wait_ms)
+                while (true)
                 {
-                    ipc::buffer recv_buf = node->receive(nack_wait_ms - elapsed_ms(round_begin));
+                    const uint64_t used = elapsed_ms(round_begin);
+                    if (used >= nack_wait_ms)
+                    {
+                        break;
+                    }
+                    ipc::buffer recv_buf = node->receive(nack_wait_ms - used);
                     if (recv_buf.empty())
                     {
                         break;
@@ -307,10 +465,6 @@ namespace dzIPC
                     }
 
                     nack_msg.deserialize(recv_buf);
-                    if (nack_msg.receiver_id == local_node_id())
-                    {
-                        continue;
-                    }
                     if (nack_msg.page_cnt != meta.page_cnt ||
                         nack_msg.total_size != meta.total_size ||
                         nack_msg.data_msg_id != meta.msg_id)
@@ -318,7 +472,7 @@ namespace dzIPC
                         continue;
                     }
 
-                    has_valid_nack = true;
+                    got_nack = true;
                     for (uint16_t page_id : nack_msg.missing_pages)
                     {
                         if (page_id > 0 && page_id <= chunks.size())
@@ -328,29 +482,26 @@ namespace dzIPC
                     }
                 }
 
-                if (!has_valid_nack || missing_union.empty())
+                if (!got_nack || missing_union.empty())
                 {
                     break;
                 }
 
-                for (uint16_t miss_page : missing_union)
+                std::size_t resent = 0;
+                for (uint16_t miss : missing_union)
                 {
-                    int retry_count = 0;
-                    while (!node->send(chunks[miss_page - 1]))
+                    if (!send_chunk_with_retry(node, chunks[miss - 1]))
                     {
-                        ++retry_count;
-                        if (retry_count >= SEND_RETRY_MAX)
-                        {
-                            return false;
-                        }
-                        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                        return false;
+                    }
+                    if ((++resent % SEND_BURST_BEFORE_YIELD) == 0 && resent < missing_union.size())
+                    {
+                        std::this_thread::sleep_for(std::chrono::microseconds(50));
                     }
                 }
             }
 
             return true;
         }
-
-#undef UDP_MAX_SIZE
     }
 }

@@ -13,7 +13,7 @@
 #include "dzIPC/common/data_rev.h"
 
 #define ListenerWaitTime 1000 // 1 second
-#define ServerRevTime 50      // 50 ms
+#define ServerRevTime 200     // 200 ms, allow large fragmented UDP payloads to complete
 namespace dzIPC
 {
   namespace socket

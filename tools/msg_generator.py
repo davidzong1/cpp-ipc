@@ -304,7 +304,8 @@ public:
             "    /* 反序列化函数 */",
             "    void deserialize(const ipc::buffer& buffer) override",
             "    {",
-            "        uint32_t offset = 0;",
+            "           uint32_t offset = 0;",
+            "           deserialize_data_cut(buffer.size());",
         ]
 
         # 反序列化每个字段
@@ -398,7 +399,7 @@ public:
                         ]
                     )
 
-        lines.append("    }")
+        lines.append("      }")
 
         return self._normalize_indent("\n".join(lines))
 

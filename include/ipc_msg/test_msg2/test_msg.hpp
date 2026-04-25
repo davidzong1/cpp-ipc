@@ -78,6 +78,7 @@ public:
     void deserialize(const ipc::buffer& buffer) override
     {
         uint32_t offset = 0;
+        deserialize_data_cut(buffer.size());
         // 反序列化 data1
         int32_t data1_count;
         this->adapt_memcpy_tods(reinterpret_cast<uint8_t *>(&data1_count), static_cast<const uint8_t *>(buffer.data()), offset, sizeof(data1_count));

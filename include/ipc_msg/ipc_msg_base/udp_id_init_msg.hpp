@@ -51,10 +51,10 @@ public:
         uint8_t cli_flag_cache;
         this->adapt_memcpy_tods(reinterpret_cast<uint8_t *>(&host_flag_cache), static_cast<const uint8_t *>(buffer.data()), offset, 1);
         host_flag = host_flag_cache == 1 ? true : false;
-        this->adapt_memcpy_tods(reinterpret_cast<uint8_t *>(&cli_flag_cache), static_cast<const uint8_t *>(buffer.data()) + offset, offset, 1);
+        this->adapt_memcpy_tods(reinterpret_cast<uint8_t *>(&cli_flag_cache), static_cast<const uint8_t *>(buffer.data()), offset, 1);
         cli_flag = cli_flag_cache == 1 ? true : false;
         uint8_t run_status_cache;
-        this->adapt_memcpy_tods(reinterpret_cast<uint8_t *>(&run_status_cache), static_cast<const uint8_t *>(buffer.data()) + offset, offset, 1);
+        this->adapt_memcpy_tods(reinterpret_cast<uint8_t *>(&run_status_cache), static_cast<const uint8_t *>(buffer.data()), offset, 1);
         run_status = run_status_cache == 1 ? true : false;
     }
     ipc_pub_sub_id_init_msg *clone() const override { return new ipc_pub_sub_id_init_msg(*this); }

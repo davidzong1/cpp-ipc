@@ -340,7 +340,7 @@ namespace dzIPC::Srv {{
             return "\n".join(lines)
 
         lines.append("          uint32_t offset = 0;")
-
+        lines.append("          deserialize_data_cut(buffer.size());")
         # 反序列化每个字段
         for field in fields:
             if field.is_string and not field.is_array:
@@ -433,7 +433,7 @@ namespace dzIPC::Srv {{
                         ]
                     )
 
-        lines.append("    }")
+        lines.append("       }")
 
         return self._normalize_indent("\n".join(lines))
 

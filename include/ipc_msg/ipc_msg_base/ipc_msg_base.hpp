@@ -24,6 +24,19 @@ public:
   ipc_msg_base() = default;
   ~ipc_msg_base() = default;
   void set_msg_id(const uint32_t id) { dz_ipc_msg_id = id; }
+  bool check_id(const ipc::buffer &data, uint32_t expected_id) const
+  {
+    if (data.size() < 12)
+    {
+      return false;
+    }
+    const uint8_t *id = reinterpret_cast<const uint8_t *>(data.data()) + data.size() - 4;
+    uint32_t msg_id = (static_cast<uint32_t>(id[0]) << 24) |
+                      (static_cast<uint32_t>(id[1]) << 16) |
+                      (static_cast<uint32_t>(id[2]) << 8) |
+                      (static_cast<uint32_t>(id[3]));
+    return msg_id == expected_id;
+  };
   /* 计算序列化后消息类型标识符 */
   bool check_id(const ipc::buffer &data)
   {
