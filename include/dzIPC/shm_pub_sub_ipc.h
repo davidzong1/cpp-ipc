@@ -11,26 +11,23 @@
 #include <atomic>
 #include "libipc/semaphore.h"
 #include "libipc/count_sem.h"
-
+#include "dzIPC/pub_sub_base.h"
 namespace dzIPC
 {
   namespace shm
   {
     class shm_pub_ipc;
     class shm_sub_ipc;
-    using TopicDataPtr = std::shared_ptr<TopicData>;
-    using MsgPtr = std::shared_ptr<ipc_msg_base>;
-    using PublishPtr = std::shared_ptr<shm_pub_ipc>;
-    using SubscribePtr = std::shared_ptr<shm_sub_ipc>;
-    class shm_pub_ipc
+
+    class shm_pub_ipc : public pub_ipc_base
     {
     public:
-      explicit shm_pub_ipc(const std::string &topic_name, const TopicDataPtr &msg, bool verbose = false);
+      explicit shm_pub_ipc(const std::shared_ptr<TopicData> &msg, const std::string &topic_name, size_t domain_id, bool verbose = false);
       ~shm_pub_ipc();
+      void reset_message(const std::shared_ptr<TopicData> &msg);
       void InitChannel(std::string extra_info = "");
-      bool publish(MsgPtr msg);
+      bool publish(std::shared_ptr<ipc_msg_base> msg);
       bool has_subscribed() const { return subscribed_; }
-      void reset_message(const TopicDataPtr &msg);
       /* 禁用拷贝 */
       shm_pub_ipc(const shm_pub_ipc &) = delete;
       shm_pub_ipc &operator=(const shm_pub_ipc &) = delete;
@@ -48,19 +45,18 @@ namespace dzIPC
       std::shared_ptr<ipc::route> publisher_;
       std::thread *publish_thread_;
       dzIPC::info_pool::ScopedRegistration pool_reg_;
-      TopicDataPtr topic_msg_;
+      std::shared_ptr<TopicData> topic_msg_;
     };
 
-    class shm_sub_ipc
+    class shm_sub_ipc : public sub_ipc_base
     {
     public:
-      explicit shm_sub_ipc(const std::string &topic_name, const TopicDataPtr &msg,
-                           const size_t queue_size, bool verbose = false);
+      explicit shm_sub_ipc(const std::shared_ptr<TopicData> &msg, const std::string &topic_name, size_t domain_id, const size_t queue_size, bool verbose = false);
       ~shm_sub_ipc();
       void InitChannel(std::string extra_info = "");
-      void reset_message(const TopicDataPtr &msg);
-      void get(MsgPtr &msg);
-      bool try_get(MsgPtr &msg);
+      void reset_message(const std::shared_ptr<TopicData> &msg);
+      void get(std::shared_ptr<TopicData> &msg);
+      bool try_get(std::shared_ptr<TopicData> &msg);
       /* 禁用拷贝 */
       shm_sub_ipc(const shm_sub_ipc &) = delete;
       shm_sub_ipc &operator=(const shm_sub_ipc &) = delete;
@@ -76,7 +72,7 @@ namespace dzIPC
       std::string topic_name_;
       std::string raw_topic_name_;
       std::shared_ptr<ipc::route> subscriber_;
-      TopicDataPtr topic_msg_;
+      std::shared_ptr<TopicData> topic_msg_;
       std::unique_ptr<CircularQueue<ipc_msg_base>> msg_queue_;
       std::thread *subscribe_thread_;
       std::thread *sub_handshake_thread_;

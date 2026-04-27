@@ -1,5 +1,4 @@
-#include "dzIPC/socket_pub_sub_ipc.h"
-#include "dzIPC/socket_ser_cli_ipc.h"
+#include "dzIPC/dzipc.h"
 #include "ipc_msg/test_msg2/test_msg.hpp"
 #include "ipc_srv/request_response_test/request_response_test.hpp"
 #include <atomic>
@@ -14,55 +13,48 @@
 namespace
 {
     using namespace dzIPC;
-    std::atomic<bool> response_complete{false};
-    std::atomic<bool> response_ok{true};
-    std::mutex response_mutex;
+    std::atomic<bool> socket_response_complete{false};
+    std::atomic<bool> socket_response_ok{true};
+    std::mutex socket_socket_response_error;
     std::string response_error;
 
-    std::atomic<bool> subscriber_done{false};
-    std::atomic<int> subscriber_count{0};
+    std::atomic<bool> socket_subscriber_done{false};
+    std::atomic<int> socket_subscriber_count{0};
 
-    void record_response_error(const std::string &message)
+    void socket_record_response_error(const std::string &message)
     {
-        response_ok.store(false);
-        std::lock_guard<std::mutex> lock(response_mutex);
+        socket_response_ok.store(false);
+        std::lock_guard<std::mutex> lock(socket_socket_response_error);
         if (response_error.empty())
         {
             response_error = message;
         }
     }
 
-    void ser_thread_function()
+    void socket_ser_thread_function()
     {
-        std::shared_ptr<ServiceData> message_ = std::make_shared<dzIPC::ServiceData>(
-            std::make_shared<dzIPC::Srv::request_response_test_Request>(),
-            std::make_shared<dzIPC::Srv::request_response_test_Response>());
-        dzIPC::socket::socket_ser_ipc service_ipc(
-            "request_response_test", message_, [](std::shared_ptr<ServiceData> &msg)
+        ServerDataPtr message_ = ServerDataPtrMake<dzIPC::Srv::request_response_test_Request>(114514); // msg id is 114514,default is 0
+        ServerIPC service_ipc(
+            "request_response_test", message_, [](ServerDataPtr &msg)
             {
-        auto req =
-            std::static_pointer_cast<dzIPC::Srv::request_response_test_Request>(
-                msg->request());
-        auto res = std::static_pointer_cast<
-            dzIPC::Srv::request_response_test_Response>(msg->response());
+        auto req = msg->request()->msgcast<dzIPC::Srv::request_response_test_Request>();
+        auto res = msg->response()->msgcast<dzIPC::Srv::request_response_test_Response>();
         res->response.resize(req->request.size());
         for (int i = 0; i < static_cast<int>(req->request.size()); i++) {
           res->response[i] = req->request[i] + 1.0;
         } },
-            1, true);
+            1, IPC_SOCKET, true);
         service_ipc.InitChannel();
-        while (!response_complete.load())
+        while (!socket_response_complete.load())
         {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
     }
 
-    void cli_thread_function()
+    void socket_cli_thread_function()
     {
-        std::shared_ptr<ServiceData> message_ = std::make_shared<dzIPC::ServiceData>(
-            std::make_shared<dzIPC::Srv::request_response_test_Request>(),
-            std::make_shared<dzIPC::Srv::request_response_test_Response>());
-        dzIPC::socket::socket_cli_ipc client_ipc("request_response_test", message_, 1, true);
+        ServerDataPtr message_ = ServerDataPtrMake<dzIPC::Srv::request_response_test_Request>(114514); // msg id is 114514,default is 0
+        ClientIPC client_ipc("request_response_test", message_, 1, IPC_SOCKET, true);
         std::vector<double> test_data;
         client_ipc.InitChannel();
         int cnt = 0;
@@ -86,8 +78,8 @@ namespace
                 {
                     std::cerr << "Expected response size: " << test_data.size()
                               << ", but got: " << response_->response.size() << std::endl;
-                    record_response_error("response size mismatch");
-                    response_complete.store(true);
+                    socket_record_response_error("response size mismatch");
+                    socket_response_complete.store(true);
                     return;
                 }
                 for (int k = 0; k < static_cast<int>(test_data.size()); k++)
@@ -96,8 +88,8 @@ namespace
                     {
                         std::cerr << "Expected response value: " << test_data[k] + 1.0
                                   << ", but got: " << response_->response[k] << std::endl;
-                        record_response_error("response value mismatch");
-                        response_complete.store(true);
+                        socket_record_response_error("response value mismatch");
+                        socket_response_complete.store(true);
                         return;
                     }
                 }
@@ -112,14 +104,13 @@ namespace
             std::this_thread::sleep_for(std::chrono::milliseconds(200));
             cnt++;
         }
-        response_complete.store(true);
+        socket_response_complete.store(true);
     }
 
     void pulish_thread_function()
     {
-        std::shared_ptr<TopicData> topic_msg_ = std::make_shared<dzIPC::TopicData>(
-            std::make_shared<dzIPC::Msg::test_msg>());
-        dzIPC::socket::socket_pub_ipc publisher(topic_msg_, "test_msg2", 1, true);
+        TopicDataPtr topic_msg_ = TopicDataPtrMake<dzIPC::Msg::test_msg>();
+        PublisherIPC publisher(topic_msg_, "test_msg2", 1, IPC_SOCKET, true);
         publisher.InitChannel();
         int count = 0;
         bool exit_flag = false;
@@ -143,23 +134,22 @@ namespace
 
     void subscribe_thread_function()
     {
-        std::shared_ptr<TopicData> topic_msg_ = std::make_shared<dzIPC::TopicData>(
-            std::make_shared<dzIPC::Msg::test_msg>());
-        dzIPC::socket::socket_sub_ipc subscriber(topic_msg_, "test_msg2", 1, 10, true);
+        TopicDataPtr topic_msg_ = TopicDataPtrMake<dzIPC::Msg::test_msg>();
+        SubscriberIPC subscriber(topic_msg_, "test_msg2", 1, 10, IPC_SOCKET, true);
         subscriber.InitChannel();
         bool exit_flag = false;
         while (!exit_flag)
         {
             if (subscriber.try_get(topic_msg_))
             {
-                auto received_msg = topic_msg_->topic()->msgcast<dzIPC::Msg::test_msg>();
-                subscriber_count.fetch_add(1);
-                for (const auto &str : received_msg->data3)
+                auto rev_msg = topic_msg_->topic()->msgcast<dzIPC::Msg::test_msg>();
+                socket_subscriber_count.fetch_add(1);
+                for (const auto &str : rev_msg->data3)
                 {
                     if (str == "exit")
                     {
                         exit_flag = true;
-                        subscriber_done.store(true);
+                        socket_subscriber_done.store(true);
                         break;
                     }
                 }
@@ -172,36 +162,36 @@ namespace
 
 TEST(DzIpcSocket, RequestResponse)
 {
-    response_complete.store(false);
-    response_ok.store(true);
+    socket_response_complete.store(false);
+    socket_response_ok.store(true);
     {
-        std::lock_guard<std::mutex> lock(response_mutex);
+        std::lock_guard<std::mutex> lock(socket_socket_response_error);
         response_error.clear();
     }
 
-    std::thread ser_thread(ser_thread_function);
-    std::thread cli_thread(cli_thread_function);
+    std::thread ser_thread(socket_ser_thread_function);
+    std::thread cli_thread(socket_cli_thread_function);
     ser_thread.join();
     cli_thread.join();
 
     std::string error_snapshot;
     {
-        std::lock_guard<std::mutex> lock(response_mutex);
+        std::lock_guard<std::mutex> lock(socket_socket_response_error);
         error_snapshot = response_error;
     }
-    ASSERT_TRUE(response_ok.load()) << error_snapshot;
+    ASSERT_TRUE(socket_response_ok.load()) << error_snapshot;
 }
 
 TEST(DzIpcSocket, PubSub)
 {
-    subscriber_done.store(false);
-    subscriber_count.store(0);
+    socket_subscriber_done.store(false);
+    socket_subscriber_count.store(0);
 
     std::thread pub_thread(pulish_thread_function);
     std::thread sub_thread(subscribe_thread_function);
     pub_thread.join();
     sub_thread.join();
 
-    EXPECT_TRUE(subscriber_done.load());
-    EXPECT_GE(subscriber_count.load(), 1);
+    EXPECT_TRUE(socket_subscriber_done.load());
+    EXPECT_GE(socket_subscriber_count.load(), 1);
 }

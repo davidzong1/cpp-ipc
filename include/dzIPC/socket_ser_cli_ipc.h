@@ -4,11 +4,11 @@
 #include <memory>
 #include <functional>
 #include "dzIPC/common/srv_data.h"
-#include "dzIPC/define.h"
 #include "libipc/udp.h"
 #include <thread>
 #include <atomic>
 #include "dzIPC/ipc_info_pool.h"
+#include "dzIPC/ser_cli_base.h"
 namespace dzIPC
 {
     namespace socket
@@ -16,32 +16,14 @@ namespace dzIPC
         class socket_ser_ipc;
         class socket_cli_ipc;
 
-        /**
-         * @brief 派生类智能指针转换
-         * @tparam T 目标派生类类型
-         * @tparam U 源类型
-         */
-        template <typename T, typename U>
-        auto msgcast(const std::shared_ptr<U> &ptr)
-        {
-            return std::static_pointer_cast<T>(ptr);
-        }
-        using ServiceDataPtr = std::shared_ptr<ServiceData>;
-        template <typename T = ipc_msg_base,
-                  typename = std::enable_if_t<std::is_base_of<ipc_msg_base, T>::value>>
-        using MsgPtr = std::shared_ptr<T>;
-        using dzIpcSerPtr = std::shared_ptr<dzIPC::socket::socket_ser_ipc>;
-        using dzIpcCliPtr = std::shared_ptr<dzIPC::socket::socket_cli_ipc>;
-        using SerCliCallback = std::function<void(ServiceDataPtr &)>;
-
-        class socket_ser_ipc
+        class socket_ser_ipc : public ser_ipc_base
         {
         public:
-            explicit socket_ser_ipc(const std::string &topic_name_, const ServiceDataPtr &msg,
-                                    SerCliCallback callback, size_t domain_id, bool verbose = false);
+            explicit socket_ser_ipc(const std::string &topic_name, const std::shared_ptr<ServiceData> &msg,
+                                    std::function<void(std::shared_ptr<ServiceData> &)> callback, size_t domain_id, bool verbose = false);
             ~socket_ser_ipc();
-            void reset_message(const ServiceDataPtr &msg);
-            void reset_callback(SerCliCallback callback);
+            void reset_message(const std::shared_ptr<ServiceData> &msg);
+            void reset_callback(std::function<void(std::shared_ptr<ServiceData> &)> callback);
             void InitChannel(std::string extra_info = "");
             /* 禁用拷贝 */
             socket_ser_ipc(const socket_ser_ipc &) = delete;
@@ -58,9 +40,9 @@ namespace dzIPC
             uint64_t port_hash_;
             std::string ipaddr_;
             bool verbose_{true};
-            SerCliCallback callback_;
+            std::function<void(std::shared_ptr<ServiceData> &)> callback_;
             std::string topic_name_;
-            ServiceDataPtr message_;
+            std::shared_ptr<ServiceData> message_;
             std::thread *response_thread_{nullptr};
             std::thread *handshake_thread_{nullptr};
             std::shared_ptr<ipc::socket::UDPNode> ipc_r_ptr_;
@@ -70,15 +52,15 @@ namespace dzIPC
             dzIPC::info_pool::ScopedRegistration pool_reg_;
         };
 
-        class socket_cli_ipc
+        class socket_cli_ipc : public cli_ipc_base
         {
         public:
-            explicit socket_cli_ipc(const std::string &topic_name_, const ServiceDataPtr &msg, size_t domain_id,
+            explicit socket_cli_ipc(const std::string &topic_name, const std::shared_ptr<ServiceData> &msg, size_t domain_id,
                                     bool verbose = false);
             ~socket_cli_ipc();
             void InitChannel(std::string extra_info = "");
-            void reset_message(const ServiceDataPtr &msg);
-            bool send_request(ServiceDataPtr &request);
+            void reset_message(const std::shared_ptr<ServiceData> &msg);
+            bool send_request(std::shared_ptr<ServiceData> &request, uint64_t rev_tm = std::numeric_limits<uint32_t>::max());
             /* 禁用拷贝 */
             socket_cli_ipc(const socket_cli_ipc &) = delete;
             socket_cli_ipc &operator=(const socket_cli_ipc &) = delete;
@@ -93,7 +75,7 @@ namespace dzIPC
             uint64_t port_hash_;
             std::string ipaddr_;
             bool verbose_{true};
-            ServiceDataPtr message_;
+            std::shared_ptr<ServiceData> message_;
             std::string topic_name_;
             std::shared_ptr<ipc::socket::UDPNode> ipc_r_ptr_;
             std::shared_ptr<ipc::socket::UDPNode> ipc_w_ptr_;

@@ -1,0 +1,88 @@
+#include "dzIPC/server_ipc.h"
+#include "libipc/utility/pimpl.h"
+#include <memory>
+namespace dzIPC
+{
+    /******************************************************************************************************/
+    /******************************************************************************************************/
+    /******************************************************************************************************/
+    /* 执行指针重定向实现继承多态 */
+    class pimpl::server_ipc_impl::server_ipc_impl_ : public ipc::pimpl<server_ipc_impl_>
+    {
+    public:
+        std::unique_ptr<ser_ipc_base> ipc;
+    };
+    pimpl::server_ipc_impl::server_ipc_impl(const std::string &topic_name_, const std::shared_ptr<ServiceData> &msg,
+                                            std::function<void(std::shared_ptr<ServiceData> &)> callback, size_t domain_id, IPCType ipc_type, bool verbose)
+        : p_(p_->make())
+    {
+        if (ipc_type == IPCType::Shm)
+        {
+            impl(p_)->ipc = std::make_unique<shm::shm_ser_ipc>(topic_name_, msg, callback, domain_id, verbose);
+        }
+        else if (ipc_type == IPCType::Socket)
+        {
+            impl(p_)->ipc = std::make_unique<socket::socket_ser_ipc>(topic_name_, msg, callback, domain_id, verbose);
+        }
+        else
+        {
+            throw std::invalid_argument("Unsupported IPC type");
+        }
+    }
+    void pimpl::server_ipc_impl::InitChannel(std::string extra_info)
+    {
+        impl(p_)->ipc->InitChannel(extra_info);
+    }
+
+    void pimpl::server_ipc_impl::reset_message(const std::shared_ptr<ServiceData> &msg)
+    {
+        impl(p_)->ipc->reset_message(msg);
+    }
+
+    void pimpl::server_ipc_impl::reset_callback(std::function<void(std::shared_ptr<ServiceData> &)> callback)
+    {
+        impl(p_)->ipc->reset_callback(callback);
+    }
+    /******************************************************************************************************/
+    /******************************************************************************************************/
+    /******************************************************************************************************/
+    /* 执行指针重定向实现继承多态 */
+    class pimpl::client_ipc_impl::client_ipc_impl_ : public ipc::pimpl<client_ipc_impl_>
+    {
+    public:
+        std::unique_ptr<cli_ipc_base> ipc;
+    };
+
+    pimpl::client_ipc_impl::client_ipc_impl(const std::string &topic_name_, const std::shared_ptr<ServiceData> &msg, size_t domain_id, IPCType ipc_type, bool verbose)
+        : p_(p_->make())
+    {
+        if (ipc_type == IPCType::Shm)
+        {
+            impl(p_)->ipc = std::make_unique<shm::shm_cli_ipc>(topic_name_, msg, domain_id, verbose);
+        }
+        else if (ipc_type == IPCType::Socket)
+        {
+            impl(p_)->ipc = std::make_unique<socket::socket_cli_ipc>(topic_name_, msg, domain_id, verbose);
+        }
+        else
+        {
+            throw std::invalid_argument("Unsupported IPC type");
+        }
+    }
+
+    void pimpl::client_ipc_impl::InitChannel(std::string extra_info)
+    {
+        impl(p_)->ipc->InitChannel(extra_info);
+    }
+
+    void pimpl::client_ipc_impl::reset_message(const std::shared_ptr<ServiceData> &msg)
+    {
+        impl(p_)->ipc->reset_message(msg);
+    }
+
+    bool pimpl::client_ipc_impl::send_request(std::shared_ptr<ServiceData> &request, uint64_t rev_tm)
+    {
+        return impl(p_)->ipc->send_request(request, rev_tm);
+    }
+
+}

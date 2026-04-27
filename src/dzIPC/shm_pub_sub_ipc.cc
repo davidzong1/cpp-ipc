@@ -21,8 +21,8 @@ namespace dzIPC
     /******************************************************************************************************/
     /******************************************************************************************************/
     /******************************************************************************************************/
-    shm_pub_ipc::shm_pub_ipc(const std::string &topic_name, const TopicDataPtr &msg, bool verbose)
-        : topic_name_("dz_ipc_" + topic_name + "_topic"), raw_topic_name_(topic_name), verbose_(verbose)
+    shm_pub_ipc::shm_pub_ipc(const std::shared_ptr<TopicData> &msg, const std::string &topic_name, size_t domain_id, bool verbose)
+        : pub_ipc_base(msg, topic_name, domain_id, verbose), topic_name_("dz_ipc_" + topic_name + "_topic"), raw_topic_name_(topic_name), verbose_(verbose)
     {
       topic_msg_.reset(msg->clone());
     }
@@ -45,7 +45,7 @@ namespace dzIPC
         publisher_->clear();
       }
     }
-    void shm_pub_ipc::reset_message(const TopicDataPtr &msg)
+    void shm_pub_ipc::reset_message(const std::shared_ptr<TopicData> &msg)
     {
       topic_msg_.reset(msg->clone());
     }
@@ -109,7 +109,7 @@ namespace dzIPC
         throw std::runtime_error("Fatal error: sem_open failed");
       }
       if (verbose_)
-        std::cerr << "\033[33m[" << topic_name_ << "PubInfo] Publisher has created topic: "
+        std::cerr << "\033[32m[" << topic_name_ << "PubInfo] Publisher has created topic: "
                   << topic_name_ << "\033[0m" << std::endl;
       while (running.load(std::memory_order_acquire))
       {
@@ -123,7 +123,7 @@ namespace dzIPC
           sub_cnt++;
           // subscribed_.store(true, std::memory_order_release);
           if (verbose_)
-            std::cerr << "\033[33m[" << topic_name_ << "PubInfo] Publisher detected a "
+            std::cerr << "\033[32m[" << topic_name_ << "PubInfo] Publisher detected a "
                                                        "subscriber on topic: "
                       << topic_name_ << "\033[0m" << std::endl;
         }
@@ -136,51 +136,10 @@ namespace dzIPC
       pub_node.close();
       sub_node.close();
     }
-    // void shm_pub_ipc::sub_listener()
-    // {
-    //   std::string pub_sem_name = "/" + topic_name_ + "_pub_node";
-    //   std::string sub_sem_name = "/" + topic_name_ + "_sub_node";
-    //   ipc::sync::semaphore pub_node;
-    //   ipc::sync::semaphore sub_node;
-    //   if (!pub_node.open(pub_sem_name.c_str(), 0))
-    //   {
-    //     std::cerr << "\033[31m["<<topic_name_<<"PubInfo] Error opening publisher semaphore for topic: "
-    //               << topic_name_ << "\033[0m" << std::endl;
-    //     throw std::runtime_error("Fatal error: sem_open failed");
-    //   }
-    //   if (!sub_node.open(sub_sem_name.c_str(), 0))
-    //   {
-    //     pub_node.close();
-    //     std::cerr << "\033[31m["<<topic_name_<<"PubInfo] Error opening subscriber semaphore for topic: "
-    //               << topic_name_ << "\033[0m" << std::endl;
-    //     throw std::runtime_error("Fatal error: sem_open failed");
-    //   }
-
-    //   while (sub_node.try_wait())
-    //     ;
-    //   if (verbose_)
-    //     std::cerr << "\033[33m["<<topic_name_<<"PubInfo] Publisher has created topic: "
-    //               << topic_name_ << "\033[0m" << std::endl;
-    //   // After the connection is established, the publisher enters a waiting loop until it detects
-    //   // the subscriber's presence (synchronized via semaphore), and then begins publishing messages.
-    //   uint64_t ts = 100; // 100ms
-    //   while (running)
-    //   {
-    //     if (sub_node.wait(ts))
-    //     {
-    //       pub_node.post();
-    //       subscribed_.store(true, std::memory_order_relaxed);
-    //       if (verbose_)
-    //         std::cerr << "\033[33m["<<topic_name_<<"PubInfo] Publisher detected a "
-    //                      "subscriber on topic: "
-    //                   << topic_name_ << "\033[0m" << std::endl;
-    //     }
-    //   }
-    // }
     /******************************************************************************************************/
     /******************************************************************************************************/
     /******************************************************************************************************/
-    bool shm_pub_ipc::publish(MsgPtr msg)
+    bool shm_pub_ipc::publish(std::shared_ptr<ipc_msg_base> msg)
     {
       try
       {
@@ -209,9 +168,8 @@ namespace dzIPC
     /******************************************************************************************************/
     /******************************************************************************************************/
     /******************************************************************************************************/
-    shm_sub_ipc::shm_sub_ipc(const std::string &topic_name, const TopicDataPtr &msg,
-                             const size_t queue_size, bool verbose)
-        : topic_name_("dz_ipc_" + topic_name + "_topic"), raw_topic_name_(topic_name), verbose_(verbose)
+    shm_sub_ipc::shm_sub_ipc(const std::shared_ptr<TopicData> &msg, const std::string &topic_name, size_t domain_id, const size_t queue_size, bool verbose)
+        : sub_ipc_base(msg, topic_name, domain_id, queue_size, verbose), topic_name_("dz_ipc_" + topic_name + "_topic"), raw_topic_name_(topic_name), verbose_(verbose)
     {
       topic_msg_.reset(msg->clone());
       msg_queue_ = std::make_unique<CircularQueue<ipc_msg_base>>(queue_size);
@@ -246,7 +204,7 @@ namespace dzIPC
     /******************************************************************************************************/
     /******************************************************************************************************/
     /******************************************************************************************************/
-    void shm_sub_ipc::reset_message(const TopicDataPtr &msg)
+    void shm_sub_ipc::reset_message(const std::shared_ptr<TopicData> &msg)
     {
       topic_msg_.reset(msg->clone());
     }
@@ -292,7 +250,7 @@ namespace dzIPC
           if (pub_node.wait(100))
           {
             if (verbose_)
-              std::cerr << "\033[33m[" << topic_name_ << "SubInfo] Subscriber has subscribed to topic: "
+              std::cerr << "\033[32m[" << topic_name_ << "SubInfo] Subscriber has subscribed to topic: "
                         << topic_name_ << "\033[0m" << std::endl;
             try
             {
@@ -335,50 +293,6 @@ namespace dzIPC
       sub_handshake_thread_ = new std::thread(&shm_sub_ipc::sub_handshake, this);
       subscribe_thread_ = new std::thread([this]()
                                           {
-    // std::string pub_sem_name = "/" + topic_name_ + "_pub_node";
-    // std::string sub_sem_name = "/" + topic_name_ + "_sub_node";
-    // ipc::sync::semaphore pub_node;
-    // ipc::sync::semaphore sub_node;
-    // if (!pub_node.open(pub_sem_name.c_str(), 0))
-    // {
-    //   std::cerr << "\033[31m[SubscriberInfo] Error opening publisher semaphore for topic: "
-    //             << topic_name_ << "\033[0m" << std::endl;
-    //   throw std::runtime_error("[SubscriberInfo] Fatal error: sem_open failed");
-    // }
-    // if (!sub_node.open(sub_sem_name.c_str(), 0))
-    // {
-    //   pub_node.close();
-    //   std::cerr << "\033[31m[SubscriberInfo] Error opening subscriber semaphore for topic: "
-    //             << topic_name_ << "\033[0m" << std::endl;
-    //   throw std::runtime_error("[SubscriberInfo] Fatal error: sem_open failed");
-    // }
-    // while (pub_node.try_wait())
-    //   ;// 清空信号量，防止残留
-    // /*  循环检测发布者是否准备好 */
-    // while (running.load(std::memory_order_acquire)) {
-    //   uint64_t ts=100; // 100ms
-    //   sub_node.post(); // 通知发布者自己已准备好
-    //   if (pub_node.wait(ts)) {
-    //     try {
-    //       subscriber_ = std::make_shared<ipc::route>(topic_name_.c_str(),
-    //                                                  ipc::receiver, verbose_);
-    //     } catch (...) {
-    //       std::cerr << "\033[31m[SubscriberInfo] Error initializing subscriber channel: "
-    //                 << topic_name_ << "\033[0m" << std::endl;
-    //       throw std::runtime_error("[SubscriberInfo] Error initializing subscriber channel: " +
-    //                                topic_name_);
-    //     }
-    //     break;
-    //   }
-    // }
-    // pub_node.close();
-    // sub_node.close();
-    // if (verbose_)
-    // {
-    //   std::cerr
-    //       << "\033[33m[SubscriberInfo] Subscriber has subscribed to topic: "
-    //       << topic_name_ << "\033[0m" << std::endl;
-    // }
     /* 进入订阅循环 */
     while (running.load(std::memory_order_acquire)) {
       if(handshake_completed.load(std::memory_order_acquire))
@@ -391,7 +305,7 @@ namespace dzIPC
         if(!topic_msg_->check_msg_id(raw_data))
           continue;
         topic_msg_->topic()->deserialize(raw_data);
-        MsgPtr ptr_cache;
+        std::shared_ptr<ipc_msg_base> ptr_cache;
         topic_msg_->swap(ptr_cache);
         msg_queue_->push(std::move(ptr_cache));
       }else{
@@ -402,13 +316,27 @@ namespace dzIPC
     /******************************************************************************************************/
     /******************************************************************************************************/
     /******************************************************************************************************/
-    void shm_sub_ipc::get(MsgPtr &msg)
+    void shm_sub_ipc::get(std::shared_ptr<TopicData> &msg)
     {
-      msg_queue_->pop(msg);
+      std::shared_ptr<ipc_msg_base> ipc_msg;
+      msg_queue_->pop(ipc_msg);
+      msg->update(ipc_msg);
     }
     /******************************************************************************************************/
     /******************************************************************************************************/
     /******************************************************************************************************/
-    bool shm_sub_ipc::try_get(MsgPtr &msg) { return msg_queue_->try_pop(msg); }
+    bool shm_sub_ipc::try_get(std::shared_ptr<TopicData> &msg)
+    {
+      std::shared_ptr<ipc_msg_base> ipc_msg;
+      if (msg_queue_->try_pop(ipc_msg))
+      {
+        msg->update(ipc_msg);
+        return true;
+      }
+      else
+      {
+        return false;
+      }
+    }
   }
 } // namespace dzIPC

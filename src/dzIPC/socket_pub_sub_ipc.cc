@@ -14,8 +14,8 @@ namespace dzIPC
         /******************************************************************************************************/
         /******************************************************************************************************/
         /******************************************************************************************************/
-        socket_pub_ipc::socket_pub_ipc(const TopicDataPtr &msg, const std::string &topic_name, size_t domain_id, bool verbose)
-            : topic_name_(topic_name), domain_id_(domain_id), verbose_(verbose)
+        socket_pub_ipc::socket_pub_ipc(const std::shared_ptr<TopicData> &msg, const std::string &topic_name, size_t domain_id, bool verbose)
+            : pub_ipc_base(msg, topic_name, domain_id, verbose), topic_name_(topic_name), domain_id_(domain_id), verbose_(verbose)
         {
             this->topic_msg_.reset(msg->clone());
             this->port_hash_ = dzIPC::common::udp_discovery_port_calculate(topic_name, domain_id);
@@ -39,7 +39,7 @@ namespace dzIPC
         /******************************************************************************************************/
         /******************************************************************************************************/
         /******************************************************************************************************/
-        void socket_pub_ipc::reset_message(const TopicDataPtr &msg)
+        void socket_pub_ipc::reset_message(const std::shared_ptr<TopicData> &msg)
         {
             topic_msg_.reset(msg->clone());
         }
@@ -75,7 +75,7 @@ namespace dzIPC
         /******************************************************************************************************/
         /******************************************************************************************************/
         /******************************************************************************************************/
-        bool socket_pub_ipc::publish(MsgPtr<> msg)
+        bool socket_pub_ipc::publish(std::shared_ptr<ipc_msg_base> msg)
         {
             try
             {
@@ -99,8 +99,8 @@ namespace dzIPC
         /******************************************************************************************************/
         /******************************************************************************************************/
         /******************************************************************************************************/
-        socket_sub_ipc::socket_sub_ipc(const TopicDataPtr &msg, const std::string &topic_name, size_t domain_id, const size_t queue_size, bool verbose)
-            : topic_name_(topic_name), domain_id_(domain_id), verbose_(verbose)
+        socket_sub_ipc::socket_sub_ipc(const std::shared_ptr<TopicData> &msg, const std::string &topic_name, size_t domain_id, const size_t queue_size, bool verbose)
+            : sub_ipc_base(msg, topic_name, domain_id, queue_size, verbose), topic_name_(topic_name), domain_id_(domain_id), verbose_(verbose)
         {
             this->topic_msg_.reset(msg->clone());
             this->port_hash_ = dzIPC::common::udp_discovery_port_calculate(topic_name, domain_id);
@@ -127,7 +127,7 @@ namespace dzIPC
         /******************************************************************************************************/
         /******************************************************************************************************/
         /******************************************************************************************************/
-        void socket_sub_ipc::reset_message(const TopicDataPtr &msg)
+        void socket_sub_ipc::reset_message(const std::shared_ptr<TopicData> &msg)
         {
             if (!msg)
             {
@@ -164,7 +164,7 @@ namespace dzIPC
                         {
                             if (chunk_rev_topic(subscriber_, topic_msg_, 50)) // rev timeput 50ms
                             {
-                                MsgPtr<> ptr_cache;
+                                std::shared_ptr<ipc_msg_base> ptr_cache;
                                 topic_msg_->swap(ptr_cache);
                                 msg_queue_->push(std::move(ptr_cache));
                             }
@@ -185,21 +185,28 @@ namespace dzIPC
         /******************************************************************************************************/
         /******************************************************************************************************/
         /******************************************************************************************************/
-
-        void socket_sub_ipc::get(MsgPtr<> &msg)
+        void socket_sub_ipc::get(std::shared_ptr<TopicData> &msg)
         {
-            msg_queue_->pop(msg);
+            std::shared_ptr<ipc_msg_base> ipc_msg;
+            msg_queue_->pop(ipc_msg);
+            msg->update(ipc_msg);
         }
         /******************************************************************************************************/
         /******************************************************************************************************/
         /******************************************************************************************************/
-        bool socket_sub_ipc::try_get(MsgPtr<> &msg)
+        bool socket_sub_ipc::try_get(std::shared_ptr<TopicData> &msg)
         {
-            return msg_queue_->try_pop(msg);
+            std::shared_ptr<ipc_msg_base> ipc_msg;
+            if (msg_queue_->try_pop(ipc_msg))
+            {
+                msg->update(ipc_msg);
+                return true;
+            }
+            else
+            {
+                return false;
+            }
         }
-        /******************************************************************************************************/
-        /******************************************************************************************************/
-        /******************************************************************************************************/
 
     }
 }

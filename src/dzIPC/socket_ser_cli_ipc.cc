@@ -28,28 +28,29 @@ namespace dzIPC
     /******************************************************************************************************/
     /******************************************************************************************************/
 
-    socket_ser_ipc::socket_ser_ipc(const std::string &topic_name_, const ServiceDataPtr &msg,
-                                   SerCliCallback callback, size_t domain_id, bool verbose)
-        : topic_name_(topic_name_),
+    socket_ser_ipc::socket_ser_ipc(const std::string &topic_name, const std::shared_ptr<ServiceData> &msg,
+                                   std::function<void(std::shared_ptr<ServiceData> &)> callback, size_t domain_id, bool verbose)
+        : ser_ipc_base(topic_name, msg, callback, domain_id, verbose),
+          topic_name_(topic_name),
           callback_(std::move(callback)),
           domain_id_(domain_id),
           verbose_(verbose)
     {
       message_.reset(msg->clone());
-      this->port_hash_ = dzIPC::common::udp_discovery_port_calculate(topic_name_, domain_id_);
-      this->ipaddr_ = dzIPC::common::udp_discovery_addr_calculate(topic_name_);
+      this->port_hash_ = dzIPC::common::udp_discovery_port_calculate(topic_name, domain_id_);
+      this->ipaddr_ = dzIPC::common::udp_discovery_addr_calculate(topic_name);
     }
     /******************************************************************************************************/
     /******************************************************************************************************/
     /******************************************************************************************************/
-    void socket_ser_ipc::reset_message(const ServiceDataPtr &msg)
+    void socket_ser_ipc::reset_message(const std::shared_ptr<ServiceData> &msg)
     {
       message_.reset(msg->clone());
     }
     /******************************************************************************************************/
     /******************************************************************************************************/
     /******************************************************************************************************/
-    void socket_ser_ipc::reset_callback(SerCliCallback callback)
+    void socket_ser_ipc::reset_callback(std::function<void(std::shared_ptr<ServiceData> &)> callback)
     {
       callback_ = std::move(callback);
     }
@@ -125,7 +126,7 @@ namespace dzIPC
     {
       uint64_t handshake_timeout_ms = 100; // 100 ms
       ipc::socket::UDPNode ser_hs(topic_name_.c_str(), ipaddr_.c_str(), port_hash_ + 2);
-      MsgPtr<ipc_pub_sub_id_init_msg> hs_msg = std::make_shared<ipc_pub_sub_id_init_msg>();
+      std::shared_ptr<ipc_pub_sub_id_init_msg> hs_msg = std::make_shared<ipc_pub_sub_id_init_msg>();
       while (!ser_hs.connect())
       {
         std::cerr << "\033[31m[" << topic_name_ << "SerInfo] Failed to connect handshake UDP,reconnect affter 1 second...\033[0m" << std::endl;
@@ -172,7 +173,7 @@ namespace dzIPC
           {
             if (verbose_)
             {
-              std::cerr << "\033[31m[" << topic_name_ << "SerInfo] Client disconnected, restarting handshake for topic: " << topic_name_ << "\033[0m" << std::endl;
+              std::cerr << "\033[32m[" << topic_name_ << "SerInfo] Client disconnected, restarting handshake for topic: " << topic_name_ << "\033[0m" << std::endl;
             }
             handshake_completed.store(false, std::memory_order_release);
             st = State::RunHS;
@@ -211,9 +212,9 @@ namespace dzIPC
     /******************************************************************************************************/
     /******************************************************************************************************/
 
-    socket_cli_ipc::socket_cli_ipc(const std::string &topic_name_, const ServiceDataPtr &msg, size_t domain_id,
+    socket_cli_ipc::socket_cli_ipc(const std::string &topic_name, const std::shared_ptr<ServiceData> &msg, size_t domain_id,
                                    bool verbose)
-        : topic_name_(topic_name_), verbose_(verbose)
+        : cli_ipc_base(topic_name, msg, domain_id, verbose), topic_name_(topic_name), verbose_(verbose)
     {
       message_.reset(msg->clone());
       this->port_hash_ = dzIPC::common::udp_discovery_port_calculate(topic_name_, domain_id);
@@ -275,8 +276,8 @@ namespace dzIPC
                         extra_info});
       if (verbose_)
       {
-        std::cerr << "\033[33m[" << topic_name_
-                  << "_Info] Client connected to server topic: " << topic_name_
+        std::cerr << "\033[32m[" << topic_name_
+                  << "_CliInfo] Client connected to server topic: " << topic_name_
                   << "\033[0m" << std::endl;
       }
     }
@@ -288,7 +289,7 @@ namespace dzIPC
     {
       uint64_t handshake_timeout_ms = 100; // 100 ms
       ipc::socket::UDPNode cli_hs(topic_name_.c_str(), ipaddr_.c_str(), port_hash_ + 2);
-      MsgPtr<ipc_pub_sub_id_init_msg> hs_msg = std::make_shared<ipc_pub_sub_id_init_msg>();
+      std::shared_ptr<ipc_pub_sub_id_init_msg> hs_msg = std::make_shared<ipc_pub_sub_id_init_msg>();
       while (!cli_hs.connect())
       {
         std::cerr << "\033[31m[" << topic_name_ << "CliInfo] Failed to connect handshake UDP,reconnect affter 1 second...\033[0m" << std::endl;
@@ -357,7 +358,7 @@ namespace dzIPC
     /******************************************************************************************************/
     /******************************************************************************************************/
     /******************************************************************************************************/
-    bool socket_cli_ipc::send_request(ServiceDataPtr &request)
+    bool socket_cli_ipc::send_request(std::shared_ptr<ServiceData> &request, uint64_t rev_tm)
     {
       if (handshake_completed.load(std::memory_order_acquire))
       {
@@ -369,7 +370,7 @@ namespace dzIPC
                     << std::endl;
           return false;
         }
-        if (!chunk_rev_server(ipc_w_ptr_, request, ServerRevTime, false))
+        if (!chunk_rev_server(ipc_w_ptr_, request, rev_tm, false))
         {
           std::cerr << "\033[31m[" << topic_name_ << "CliInfo] Error receiving response: Failed to receive or parse response\033[0m" << std::endl;
           return false;
@@ -384,7 +385,7 @@ namespace dzIPC
     /******************************************************************************************************/
     /******************************************************************************************************/
     /******************************************************************************************************/
-    void socket_cli_ipc::reset_message(const ServiceDataPtr &msg)
+    void socket_cli_ipc::reset_message(const std::shared_ptr<ServiceData> &msg)
     {
       message_.reset(msg->clone());
     }

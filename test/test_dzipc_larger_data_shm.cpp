@@ -1,5 +1,5 @@
-#include "dzIPC/socket_pub_sub_ipc.h"
-#include "dzIPC/socket_ser_cli_ipc.h"
+#include "dzIPC/shm_pub_sub_ipc.h"
+#include "dzIPC/shm_ser_cli_ipc.h"
 #include "ipc_msg/test_msg2/test_msg.hpp"
 #include "ipc_srv/request_response_test/request_response_test.hpp"
 #include <gtest/gtest.h>
@@ -11,7 +11,6 @@
 #include <vector>
 namespace
 {
-    using namespace dzIPC;
     std::atomic<bool> response_complete{false};
     std::atomic<bool> response_ok{true};
     std::mutex response_mutex;
@@ -19,7 +18,7 @@ namespace
 
     std::atomic<bool> subscriber_done{false};
     std::atomic<int> subscriber_count{0};
-
+    using namespace dzIPC;
     void record_response_error(const std::string &message)
     {
         response_ok.store(false);
@@ -35,7 +34,7 @@ namespace
         std::shared_ptr<ServiceData> message_ = std::make_shared<dzIPC::ServiceData>(
             std::make_shared<dzIPC::Srv::request_response_test_Request>(),
             std::make_shared<dzIPC::Srv::request_response_test_Response>());
-        dzIPC::socket::socket_ser_ipc service_ipc(
+        dzIPC::shm::shm_ser_ipc service_ipc(
             "request_response_test", message_, [](std::shared_ptr<ServiceData> &msg)
             {
         auto req =
@@ -47,7 +46,7 @@ namespace
         for (int i = 0; i < static_cast<int>(req->request.size()); i++) {
           res->response[i] = req->request[i] + 1.0;
         } },
-            1, true);
+            true);
         service_ipc.InitChannel();
         while (!response_complete.load())
         {
@@ -60,7 +59,7 @@ namespace
         std::shared_ptr<ServiceData> message_ = std::make_shared<dzIPC::ServiceData>(
             std::make_shared<dzIPC::Srv::request_response_test_Request>(),
             std::make_shared<dzIPC::Srv::request_response_test_Response>());
-        dzIPC::socket::socket_cli_ipc client_ipc("request_response_test", message_, 1, true);
+        dzIPC::shm::shm_cli_ipc client_ipc("request_response_test", message_, true);
         std::vector<double> test_data;
         client_ipc.InitChannel();
         int cnt = 0;
@@ -105,7 +104,7 @@ namespace
         response_complete.store(true);
     }
 
-    TEST(DzIpcSocket, RequestResponse)
+    TEST(DzIpcshm, RequestResponse)
     {
         response_complete.store(false);
         response_ok.store(true);

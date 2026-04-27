@@ -4,6 +4,7 @@
 #include <vector>
 #include <utility>
 #include "libipc/buffer.h"
+#include <memory>
 struct ipc_tail_msg
 {
   uint16_t page_cnt = 0;
@@ -12,7 +13,7 @@ struct ipc_tail_msg
   uint32_t dz_ipc_msg_id = 0;
 };
 
-class ipc_msg_base
+class ipc_msg_base : public std::enable_shared_from_this<ipc_msg_base>
 {
   struct size_info
   {
@@ -187,6 +188,13 @@ public:
   }
 #undef IPC_MSG_MAX_SIZE
 #undef TAIL_MSG_SIZE
+
+  template <typename T = ipc_msg_base,
+            typename = std::enable_if_t<std::is_base_of<ipc_msg_base, T>::value>>
+  std::shared_ptr<T> msgcast()
+  {
+    return std::static_pointer_cast<T>(shared_from_this());
+  }
 
 protected:
   mutable uint32_t _total_size = 0;

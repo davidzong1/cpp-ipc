@@ -8,6 +8,7 @@
 #include <sys/stat.h>
 #include <typeinfo>
 #include "libipc/semaphore.h"
+// #include "dzIPC/common/thread_dispatch.h"
 namespace dzIPC
 {
   namespace shm
@@ -22,9 +23,9 @@ namespace dzIPC
     /******************************************************************************************************/
     /******************************************************************************************************/
 
-    shm_ser_ipc::shm_ser_ipc(const std::string &topic_name_, const ServiceDataPtr &msg,
-                             SerCliCallback callback, bool verbose)
-        : topic_name_(topic_name_),
+    shm_ser_ipc::shm_ser_ipc(const std::string &topic_name, const std::shared_ptr<ServiceData> &msg,
+                             std::function<void(std::shared_ptr<ServiceData> &)> callback, size_t domain_id, bool verbose)
+        : ser_ipc_base(topic_name, msg, callback, domain_id, verbose), topic_name_(topic_name),
           callback_(std::move(callback)),
           verbose_(verbose)
     {
@@ -33,14 +34,14 @@ namespace dzIPC
     /******************************************************************************************************/
     /******************************************************************************************************/
     /******************************************************************************************************/
-    void shm_ser_ipc::reset_message(const ServiceDataPtr &msg)
+    void shm_ser_ipc::reset_message(const std::shared_ptr<ServiceData> &msg)
     {
       message_.reset(msg->clone());
     }
     /******************************************************************************************************/
     /******************************************************************************************************/
     /******************************************************************************************************/
-    void shm_ser_ipc::reset_callback(SerCliCallback callback)
+    void shm_ser_ipc::reset_callback(std::function<void(std::shared_ptr<ServiceData> &)> callback)
     {
       callback_ = std::move(callback);
     }
@@ -101,9 +102,10 @@ namespace dzIPC
                         "shm",
                         /*domain_id=*/0,
                         extra_info});
-      std::cerr << "\033[33m[" << topic_name_ << "_Info] Server channel created for topic: " << topic_name_
+      std::cerr << "\033[32m[" << topic_name_ << "_SerInfo] Server channel created for topic: " << topic_name_
                 << "\033[0m" << std::endl;
       response_thread_ = new std::thread(&shm_ser_ipc::response_thread_func, this);
+      // ThreadDispatch::set_thread_priority(response_thread_, 20, verbose_, topic_name_ + "_SerResponseThread");
     }
     /******************************************************************************************************/
     /******************************************************************************************************/
@@ -161,7 +163,7 @@ namespace dzIPC
           }
           else
           {
-            std::cerr << "\033[33m[" << topic_name_ << "_Info] Client disconnected from server: " << topic_name_
+            std::cerr << "\033[32m[" << topic_name_ << "_SerInfo] Client disconnected from server: " << topic_name_
                       << "\033[0m" << std::endl;
             st = State::RunHS; // 进入重新连接状态
             handshake_completed.store(false, std::memory_order_release);
@@ -172,7 +174,7 @@ namespace dzIPC
         ; // 清空服务信号量
       if (verbose_)
       {
-        std::cerr << "\033[33m[" << topic_name_ << "_Info] Server exiting, sending stop signal to client: " << topic_name_
+        std::cerr << "\033[32m[" << topic_name_ << "_SerInfo] Server exiting, sending stop signal to client: " << topic_name_
                   << "\033[0m" << std::endl;
       }
       sem_stop.post(); // 发送停止信号，通知客户端退出等待
@@ -197,7 +199,7 @@ namespace dzIPC
         {
           if (verbose_)
           {
-            std::cerr << "\033[31m[Warning] Received message with invalid ID on topic: "
+            std::cerr << "\033[33m[Warning] Received message with invalid ID on topic: "
                       << topic_name_ << "\033[0m" << std::endl;
           }
           continue;
@@ -221,9 +223,8 @@ namespace dzIPC
     /******************************************************************************************************/
     /******************************************************************************************************/
 
-    shm_cli_ipc::shm_cli_ipc(const std::string &topic_name_, const ServiceDataPtr &msg,
-                             bool verbose)
-        : topic_name_(topic_name_), message_(msg), verbose_(verbose) {}
+    shm_cli_ipc::shm_cli_ipc(const std::string &topic_name, const std::shared_ptr<ServiceData> &msg, size_t domain_id, bool verbose)
+        : cli_ipc_base(topic_name, msg, domain_id, verbose), topic_name_(topic_name), message_(msg), verbose_(verbose) {}
 
     shm_cli_ipc::~shm_cli_ipc()
     {
@@ -264,8 +265,8 @@ namespace dzIPC
                         extra_info});
       if (verbose_)
       {
-        std::cerr << "\033[33m[" << topic_name_
-                  << "_Info] Client connected to server topic: " << topic_name_
+        std::cerr << "\033[32m[" << topic_name_
+                  << "_CLiInfo] Client connected to server topic: " << topic_name_
                   << "\033[0m" << std::endl;
       }
     }
@@ -337,7 +338,7 @@ namespace dzIPC
         ;
       if (verbose_)
       {
-        std::cerr << "\033[33m[" << topic_name_ << "_Info] Client exiting, sending stop signal to server: " << topic_name_
+        std::cerr << "\033[32m[" << topic_name_ << "_CLiInfo] Client exiting, sending stop signal to server: " << topic_name_
                   << "\033[0m" << std::endl;
       }
       sem_stop.post(); // 发送停止信号，通知服务端退出等待
@@ -347,14 +348,14 @@ namespace dzIPC
     /******************************************************************************************************/
     /******************************************************************************************************/
     /******************************************************************************************************/
-    bool shm_cli_ipc::send_request(ServiceDataPtr &request, uint64_t rev_tm)
+    bool shm_cli_ipc::send_request(std::shared_ptr<ServiceData> &request, uint64_t rev_tm)
     {
       /* 主线程执行，因此无需考虑running */
       if (!handshake_completed.load(std::memory_order_acquire))
       {
         if (verbose_)
         {
-          std::cerr << "\033[32m[Warning] Handshake not completed, cannot send request on topic: "
+          std::cerr << "\033[32m[" << topic_name_ << "_CLiInfo] Handshake not completed, cannot send request on topic: "
                     << topic_name_ << "\033[0m" << std::endl;
         }
         return false;
@@ -387,7 +388,7 @@ namespace dzIPC
     /******************************************************************************************************/
     /******************************************************************************************************/
     /******************************************************************************************************/
-    void shm_cli_ipc::reset_message(const ServiceDataPtr &msg)
+    void shm_cli_ipc::reset_message(const std::shared_ptr<ServiceData> &msg)
     {
       message_.reset(msg->clone());
     }

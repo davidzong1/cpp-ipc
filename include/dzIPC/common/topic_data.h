@@ -7,24 +7,28 @@ namespace dzIPC
   class TopicData
   {
   public:
-    TopicData(const std::shared_ptr<ipc_msg_base> &topic, size_t domain_id = 0)
+    TopicData(const std::shared_ptr<ipc_msg_base> &topic, size_t msg_id = 0)
     {
       topic_.reset(topic->clone());
       topic_cache.reset(topic->clone());
-      topic_->set_msg_id(domain_id);
-      topic_cache->set_msg_id(domain_id);
-      domain_id_ = domain_id;
+      topic_->set_msg_id(msg_id);
+      topic_cache->set_msg_id(msg_id);
+      msg_id_ = msg_id;
     }
 
-    TopicData(std::shared_ptr<ipc_msg_base> &&topic, size_t domain_id = 0) : topic_(std::move(topic)), domain_id_(domain_id)
+    TopicData(std::shared_ptr<ipc_msg_base> &&topic, size_t msg_id = 0) : topic_(std::move(topic)), msg_id_(msg_id)
     {
       topic_cache.reset(topic_->clone());
-      topic_->set_msg_id(domain_id);
-      topic_cache->set_msg_id(domain_id);
+      topic_->set_msg_id(msg_id);
+      topic_cache->set_msg_id(msg_id);
     }
     std::shared_ptr<ipc_msg_base> &topic() { return topic_; };
 
     TopicData *clone() const { return new TopicData(*this); }
+    void update(std::shared_ptr<ipc_msg_base> &other)
+    {
+      topic_ = std::move(other);
+    }
     void swap(std::shared_ptr<ipc_msg_base> &other)
     {
       other = std::move(topic_);
@@ -40,11 +44,11 @@ namespace dzIPC
     {
       topic_.reset(other.topic_->clone());
       topic_cache.reset(other.topic_cache->clone());
-      domain_id_ = other.domain_id_;
+      msg_id_ = other.msg_id_;
     }
     TopicData() = default;
     std::shared_ptr<ipc_msg_base> topic_, topic_cache;
-    size_t domain_id_{0};
+    size_t msg_id_{0};
   };
 } // namespace dzIPC
 
