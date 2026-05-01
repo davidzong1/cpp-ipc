@@ -27,6 +27,38 @@
 
 See: [Wiki](https://github.com/mutouyun/cpp-ipc/wiki)
 
+## Python Bindings Build
+
+This repository contains a pybind11 module source at `python/interface.cc`.
+
+Build with CMake (recommended):
+
+```bash
+cmake -S . -B build -DLIBIPC_BUILD_PYTHON=ON -DLIBIPC_BUILD_TESTS=OFF -DLIBIPC_BUILD_DEMOS=OFF
+cmake --build build --target dzipc_cpp -j
+```
+
+The built module is generated under `build/python/`.
+
+Build from setup.py (wraps CMake):
+
+```bash
+cd python
+python3 setup.py build_ext --inplace
+```
+
+Build and install using pip (PEP 517):
+
+```bash
+python3 -m pip install ./python
+```
+
+Minimal import smoke test:
+
+```bash
+python3 ./python/tests/smoke_import.py
+```
+
 ## Performance
 
 | Environment | Value                           |

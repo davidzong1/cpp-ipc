@@ -52,4 +52,8 @@ build/**
 
 # vs
 .vs
-.vscode
+# .vscode
+.cmake/**
+.log/**
+
+*.venv/**

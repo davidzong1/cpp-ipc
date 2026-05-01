@@ -8,124 +8,121 @@
 
 #include "libipc/shm.h"
 
-namespace dzIPC
+namespace dzIPC {
+namespace info_pool {
+/* 当前条目的通信角色 */
+enum class EntryKind : uint32_t {
+    Unknown = 0,
+    ShmPub = 1,
+    ShmSub = 2,
+    SocketPub = 3,
+    SocketSub = 4,
+    ShmServer = 5,
+    ShmClient = 6,
+    SocketServer = 7,
+    SocketClient = 8,
+};
+
+const char* to_string(EntryKind kind) noexcept;
+
+/* Best-effort demangle（ABI 为 Itanium 时有效；回退为原始 mangled 名） */
+std::string demangle(const char* mangled);
+
+/* 池内字符串字段的定长上限（与 PoolEntry 物理布局严格对应） */
+constexpr std::size_t kMaxTopicName = 128;
+constexpr std::size_t kMaxTypeName = 64;
+constexpr std::size_t kMaxExtra = 64;
+constexpr std::size_t kMaxEntries = 512;
+
+/* 注册时提交给池的元信息 */
+struct RegisterInfo
 {
-    namespace info_pool
-    {
-        /* 当前条目的通信角色 */
-        enum class EntryKind : uint32_t
-        {
-            Unknown = 0,
-            ShmPub = 1,
-            ShmSub = 2,
-            SocketPub = 3,
-            SocketSub = 4,
-            ShmServer = 5,
-            ShmClient = 6,
-            SocketServer = 7,
-            SocketClient = 8,
-        };
+    EntryKind kind{EntryKind::Unknown};
+    std::string topic_name;
+    std::string type_name;
+    std::string ipc_mode;
+    std::string extra;
+};
 
-        const char *to_string(EntryKind kind) noexcept;
+/* 第三方观察进程读取时得到的每条记录 */
+struct EntrySnapshot
+{
+    int32_t slot{-1};
+    EntryKind kind{EntryKind::Unknown};
+    int32_t pid{0};
+    int64_t register_ts_ns{0};
+    int64_t heartbeat_ns{0};
+    std::string topic_name;
+    std::string type_name;
+    std::string extra;
+    bool in_use{true};
+    bool alive{true};
+};
 
-        /* Best-effort demangle（ABI 为 Itanium 时有效；回退为原始 mangled 名） */
-        std::string demangle(const char *mangled);
+class IpcInfoPool
+{
+public:
+    static IpcInfoPool& instance();
 
-        /* 池内字符串字段的定长上限（与 PoolEntry 物理布局严格对应） */
-        constexpr std::size_t kMaxTopicName = 128;
-        constexpr std::size_t kMaxTypeName = 64;
-        constexpr std::size_t kMaxExtra = 64;
-        constexpr std::size_t kMaxEntries = 512;
+    /* 注册一条记录，返回 slot（>=0 成功，-1 失败） */
+    int32_t register_entry(const RegisterInfo& info);
 
-        /* 注册时提交给池的元信息 */
-        struct RegisterInfo
-        {
-            EntryKind kind{EntryKind::Unknown};
-            std::string topic_name;
-            std::string type_name;
-            std::string ipc_mode;
-            int32_t domain_id{0};
-            std::string extra;
-        };
+    /* 清除指定 slot；slot < 0 时静默忽略 */
+    void unregister_entry(int32_t slot);
 
-        /* 第三方观察进程读取时得到的每条记录 */
-        struct EntrySnapshot
-        {
-            int32_t slot{-1};
-            EntryKind kind{EntryKind::Unknown};
-            int32_t pid{0};
-            int32_t domain_id{0};
-            int64_t register_ts_ns{0};
-            int64_t heartbeat_ns{0};
-            std::string topic_name;
-            std::string type_name;
-            std::string extra;
-            bool alive{true};
-        };
+    /* 刷新心跳时间戳（steady_clock ns） */
+    void heartbeat(int32_t slot);
 
-        class IpcInfoPool
-        {
-        public:
-            static IpcInfoPool &instance();
+    /* 整表快照；gc_dead=true 时同步回收 pid 已不存在的条目 */
+    std::vector<EntrySnapshot> snapshot(bool gc_dead = true);
 
-            /* 注册一条记录，返回 slot（>=0 成功，-1 失败） */
-            int32_t register_entry(const RegisterInfo &info);
+    /* 主动回收 pid 已不存在的条目，返回回收数量 */
+    std::size_t gc_dead();
 
-            /* 清除指定 slot；slot < 0 时静默忽略 */
-            void unregister_entry(int32_t slot);
+    /* 摧毁底层共享内存；仅用于测试/清理工具 */
+    static void reset_storage();
 
-            /* 刷新心跳时间戳（steady_clock ns） */
-            void heartbeat(int32_t slot);
+    IpcInfoPool(const IpcInfoPool&) = delete;
+    IpcInfoPool& operator=(const IpcInfoPool&) = delete;
 
-            /* 整表快照；gc_dead=true 时同步回收 pid 已不存在的条目 */
-            std::vector<EntrySnapshot> snapshot(bool gc_dead = true);
+private:
+    IpcInfoPool();
+    ~IpcInfoPool();
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
+};
 
-            /* 主动回收 pid 已不存在的条目，返回回收数量 */
-            std::size_t gc_dead();
+/* RAII 包装：构造时注册，析构时注销；建议作为 pub/sub/ser/cli 成员 */
+class ScopedRegistration
+{
+public:
+    ScopedRegistration() = default;
+    explicit ScopedRegistration(const RegisterInfo& info);
 
-            /* 摧毁底层共享内存；仅用于测试/清理工具 */
-            static void reset_storage();
+    ScopedRegistration(const ScopedRegistration&) = delete;
+    ScopedRegistration& operator=(const ScopedRegistration&) = delete;
 
-            IpcInfoPool(const IpcInfoPool &) = delete;
-            IpcInfoPool &operator=(const IpcInfoPool &) = delete;
+    ScopedRegistration(ScopedRegistration&& other) noexcept;
+    ScopedRegistration& operator=(ScopedRegistration&& other) noexcept;
 
-        private:
-            IpcInfoPool();
-            ~IpcInfoPool();
-            struct Impl;
-            std::unique_ptr<Impl> impl_;
-        };
+    ~ScopedRegistration();
 
-        /* RAII 包装：构造时注册，析构时注销；建议作为 pub/sub/ser/cli 成员 */
-        class ScopedRegistration
-        {
-        public:
-            ScopedRegistration() = default;
-            explicit ScopedRegistration(const RegisterInfo &info);
+    bool valid() const noexcept { return slot_ >= 0; }
 
-            ScopedRegistration(const ScopedRegistration &) = delete;
-            ScopedRegistration &operator=(const ScopedRegistration &) = delete;
+    int32_t slot() const noexcept { return slot_; }
 
-            ScopedRegistration(ScopedRegistration &&other) noexcept;
-            ScopedRegistration &operator=(ScopedRegistration &&other) noexcept;
+    /* 重新绑定到另一条记录；会先注销当前的 slot */
+    void rebind(const RegisterInfo& info);
 
-            ~ScopedRegistration();
+    /* 主动释放 slot，可幂等调用 */
+    void reset();
 
-            bool valid() const noexcept { return slot_ >= 0; }
-            int32_t slot() const noexcept { return slot_; }
+    /* 刷新心跳 */
+    void heartbeat();
 
-            /* 重新绑定到另一条记录；会先注销当前的 slot */
-            void rebind(const RegisterInfo &info);
+private:
+    int32_t slot_{-1};
+};
 
-            /* 主动释放 slot，可幂等调用 */
-            void reset();
-
-            /* 刷新心跳 */
-            void heartbeat();
-
-        private:
-            int32_t slot_{-1};
-        };
-
-    } // namespace info_pool
-} // namespace dzIPC
+}   // namespace info_pool
+}   // namespace dzIPC

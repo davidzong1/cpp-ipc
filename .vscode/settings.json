@@ -1,0 +1,8 @@
+{
+    "C_Cpp.errorSquiggles": "enabled",
+    "editor.formatOnSave": true,
+    "python.analysis.extraPaths": [
+        "${workspaceFolder}/python"
+    ],
+    "python.analysis.stubPath": "${workspaceFolder}/python"
+}

@@ -6,12 +6,12 @@
 #include <cstddef>
 #include "ipc_msg/ipc_msg_base/ipc_msg_base.hpp"
 namespace dzIPC::Msg {
-class test_msg : public ipc_msg_base
+class TestMsg : public IpcMsgBase
 {
 public:
     /* 构造函数和析构函数 */
-    test_msg() = default;
-    ~test_msg() = default;
+    TestMsg() = default;
+    ~TestMsg() = default;
 
 
     /* 成员变量 */
@@ -114,9 +114,9 @@ public:
     }
 
         /* 克隆函数 */
-        test_msg* clone() const override
+        TestMsg* clone() const override
         {
-            return new test_msg(*this);
+            return new TestMsg(*this);
         }
 
 };

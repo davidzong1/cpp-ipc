@@ -5,7 +5,7 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter)
 function(generate_ipc_messages)
     message(STATUS "运行消息生成器...")
     execute_process(
-        COMMAND ${Python3_EXECUTABLE} tools/batch_msg_srv_generator.py
+        COMMAND ${Python3_EXECUTABLE} generator/batch_msg_srv_generator.py
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
         RESULT_VARIABLE result
         OUTPUT_VARIABLE output
@@ -17,7 +17,7 @@ function(generate_ipc_messages)
     endif()
 endfunction()
 add_custom_target(generate_ipc_messages ALL
-    COMMAND ${Python3_EXECUTABLE} tools/batch_msg_srv_generator.py
+    COMMAND ${Python3_EXECUTABLE} generator/batch_msg_srv_generator.py
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     COMMENT "运行消息生成器..."
     VERBATIM
@@ -26,21 +26,27 @@ set_target_properties(generate_ipc_messages PROPERTIES
     EXCLUDE_FROM_ALL FALSE
     EXCLUDE_FROM_DEFAULT_BUILD FALSE
 )
-# 调用函数
-# generate_ipc_messages()
+
 
 option(ROSBUILD                 "Build with ROS2 support."                              OFF)
 option(LIBIPC_BUILD_TESTS       "Build all of libipc's own tests."                      ON)
 option(ENABLE_DEBUG_INFO        "Enable debug info "                                    OFF)
 option(LIBIPC_BUILD_DEMOS       "Build all of libipc's own demos."                      OFF)
-option(LIBIPC_BUILD_SHARED_LIBS "Build shared libraries (DLLs)."                        OFF)
+option(LIBIPC_BUILD_SHARED_LIBS "Build shared libraries (DLLs)."                        ON)
 option(LIBIPC_USE_STATIC_CRT    "Set to ON to build with static CRT on Windows (/MT)."  OFF)
 option(OPEN_DEBUG_MODE          "Enable debug mode in PROJECT."                         ON)
+option(LIBIPC_BUILD_PYTHON      "Build pybind11 Python module dzipc_cpp."               OFF)
+option(UPDATA_MSG_SRV_GENERATOR    "Update msg/srv generator scripts."                  ON)
 
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -DNDEBUG")
+
+if (UPDATA_MSG_SRV_GENERATOR)
+    generate_ipc_messages()
+endif()
+
 if (OPEN_DEBUG_MODE)
     set(CMAKE_BUILD_TYPE Debug)
 else()
@@ -95,7 +101,12 @@ if(ROSBUILD)
 endif()
 
 add_subdirectory(src)
-add_subdirectory(tools/dzipc_topic_list)
+
+if (LIBIPC_BUILD_PYTHON)
+    add_subdirectory(python)
+endif()
+
+add_subdirectory(exec/dzipc_list)
 
 if (LIBIPC_BUILD_TESTS)
     set(GOOGLETEST_VERSION 1.10.0)

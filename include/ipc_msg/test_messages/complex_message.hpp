@@ -6,12 +6,12 @@
 #include <cstddef>
 #include "ipc_msg/ipc_msg_base/ipc_msg_base.hpp"
 namespace dzIPC::Msg {
-class complex_message : public ipc_msg_base
+class ComplexMessage : public IpcMsgBase
 {
 public:
     /* 构造函数和析构函数 */
-    complex_message() = default;
-    ~complex_message() = default;
+    ComplexMessage() = default;
+    ~ComplexMessage() = default;
 
 
     /* 成员变量 */
@@ -387,9 +387,9 @@ public:
     }
 
         /* 克隆函数 */
-        complex_message* clone() const override
+        ComplexMessage* clone() const override
         {
-            return new complex_message(*this);
+            return new ComplexMessage(*this);
         }
 
 };

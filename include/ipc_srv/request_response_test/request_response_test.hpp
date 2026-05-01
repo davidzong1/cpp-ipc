@@ -9,12 +9,12 @@
 namespace dzIPC::Srv {
 
 // 请求类
-class request_response_test_Request : public ipc_msg_base
+class RequestResponseTestRequest : public IpcMsgBase
 {
 public:
     /* 构造函数和析构函数 */
-    request_response_test_Request() = default;
-    ~request_response_test_Request() = default;
+    RequestResponseTestRequest() = default;
+    ~RequestResponseTestRequest() = default;
 
     /* 成员变量 */
     std::vector<double> request;/* request */
@@ -60,19 +60,19 @@ public:
     }
 
     /* 克隆函数 */
-    request_response_test_Request* clone() const override
+    RequestResponseTestRequest* clone() const override
     {
-        return new request_response_test_Request(*this);
+        return new RequestResponseTestRequest(*this);
     }
 };
 
 // 响应类
-class request_response_test_Response : public ipc_msg_base
+class RequestResponseTestResponse : public IpcMsgBase
 {
 public:
     /* 构造函数和析构函数 */
-    request_response_test_Response() = default;
-    ~request_response_test_Response() = default;
+    RequestResponseTestResponse() = default;
+    ~RequestResponseTestResponse() = default;
 
     /* 成员变量 */
     std::vector<double> response;/* response */
@@ -118,9 +118,9 @@ public:
     }
 
     /* 克隆函数 */
-    request_response_test_Response* clone() const override
+    RequestResponseTestResponse* clone() const override
     {
-        return new request_response_test_Response(*this);
+        return new RequestResponseTestResponse(*this);
     }
 };
 
