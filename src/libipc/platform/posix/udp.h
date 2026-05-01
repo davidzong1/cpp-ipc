@@ -55,7 +55,9 @@ namespace ipc
 
                     int reuse = 1;
                     int nRecvBuf = 1024 * 1024; // 1MB
+                    int nSendBuf = 1024 * 1024; // 1MB
                     ::setsockopt(server_fd, SOL_SOCKET, SO_RCVBUF, &nRecvBuf, sizeof(nRecvBuf));
+                    ::setsockopt(server_fd, SOL_SOCKET, SO_SNDBUF, &nSendBuf, sizeof(nSendBuf));
                     ::setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
 #ifdef SO_REUSEPORT
                     ::setsockopt(server_fd, SOL_SOCKET, SO_REUSEPORT, &reuse, sizeof(reuse));

@@ -16,6 +16,7 @@ constexpr std::size_t MAX_RECV_TOTAL_SIZE = 64 * 1'024 * 1'024;
 constexpr int SEND_RETRY_MAX = 10;
 constexpr int RTPS_MAX_NACK_ROUND = 5;
 constexpr int SEND_BURST_BEFORE_YIELD = 64;
+constexpr uint64_t ACK_FAST_WAIT_MS = 5;
 
 struct chunk_meta
 {
@@ -159,7 +160,14 @@ bool send_chunk_with_retry(std::shared_ptr<ipc::socket::UDPNode>& node, ipc::buf
         {
             return false;
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        if (retry <= 2)
+        {
+            std::this_thread::yield();
+        }
+        else
+        {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
     }
     return true;
 }
@@ -174,10 +182,21 @@ bool send_all_chunks(std::shared_ptr<ipc::socket::UDPNode>& node, std::vector<ip
         }
         if (((i + 1) % SEND_BURST_BEFORE_YIELD) == 0 && (i + 1) < chunks.size())
         {
-            std::this_thread::sleep_for(std::chrono::microseconds(50));
+            std::this_thread::yield();
         }
     }
     return true;
+}
+
+void send_ack(std::shared_ptr<ipc::socket::UDPNode>& node, const chunk_meta& meta)
+{
+    IpcRtpsAckMsg ack_msg;
+    ack_msg.page_cnt = meta.page_cnt;
+    ack_msg.total_size = meta.total_size;
+    ack_msg.data_msg_id = meta.msg_id;
+    ack_msg.receiver_id = local_node_id();
+    ipc::buffer ack_buf = ack_msg.serialize();
+    send_chunk_with_retry(node, ack_buf);
 }
 
 bool wait_first_data_chunk(std::shared_ptr<ipc::socket::UDPNode>& node, std::shared_ptr<IpcMsgBase>& msg_ptr,
@@ -347,6 +366,7 @@ bool recv_chunk_common(std::shared_ptr<ipc::socket::UDPNode>& node, std::shared_
 
     ipc::buffer assembled_view(assembled.data(), meta.total_size);
     msg_ptr->deserialize(assembled_view);
+    send_ack(node, meta);
     return true;
 }
 }   // namespace
@@ -414,24 +434,38 @@ bool chunk_send(std::shared_ptr<ipc::socket::UDPNode>& node, ipc::buffer& publis
     const chunk_meta meta{first_tail.page_cnt, first_tail.total_size, first_tail.dz_ipc_msg_id};
     const uint64_t nack_wait_ms = calc_nack_wait_ms(meta.page_cnt);
     IpcRtpsNackMsg nack_msg;
+    IpcRtpsAckMsg ack_msg;
 
     for (int round = 0; round < RTPS_MAX_NACK_ROUND; ++round)
     {
         bool got_nack = false;
+        bool got_ack = false;
         std::unordered_set<uint16_t> missing_union;
         const auto round_begin = std::chrono::steady_clock::now();
+        const uint64_t round_wait_ms = (round == 0) ? ACK_FAST_WAIT_MS : nack_wait_ms;
 
         while (true)
         {
             const uint64_t used = elapsed_ms(round_begin);
-            if (used >= nack_wait_ms)
+            if (used >= round_wait_ms)
             {
                 break;
             }
-            ipc::buffer recv_buf = node->receive(nack_wait_ms - used);
+            ipc::buffer recv_buf = node->receive(round_wait_ms - used);
             if (recv_buf.empty())
             {
                 break;
+            }
+            if (ack_msg.check_ak_id(recv_buf))
+            {
+                ack_msg.deserialize(recv_buf);
+                if (ack_msg.page_cnt == meta.page_cnt && ack_msg.total_size == meta.total_size
+                    && ack_msg.data_msg_id == meta.msg_id)
+                {
+                    got_ack = true;
+                    break;
+                }
+                continue;
             }
             if (!nack_msg.check_id(recv_buf))
             {
@@ -455,6 +489,11 @@ bool chunk_send(std::shared_ptr<ipc::socket::UDPNode>& node, ipc::buffer& publis
             }
         }
 
+        if (got_ack)
+        {
+            return true;
+        }
+
         if (!got_nack || missing_union.empty())
         {
             break;
@@ -469,7 +508,7 @@ bool chunk_send(std::shared_ptr<ipc::socket::UDPNode>& node, ipc::buffer& publis
             }
             if ((++resent % SEND_BURST_BEFORE_YIELD) == 0 && resent < missing_union.size())
             {
-                std::this_thread::sleep_for(std::chrono::microseconds(50));
+                std::this_thread::yield();
             }
         }
     }

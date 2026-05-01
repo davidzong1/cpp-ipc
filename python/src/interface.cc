@@ -154,58 +154,42 @@ PYBIND11_MODULE(dzipc_cpp, m)
         .def_readwrite("data3", &dzIPC::Msg::TestMsg::data3)
         .def_readwrite("data4", &dzIPC::Msg::TestMsg::data4);
 
-    py::class_<dzIPC::Srv::RequestResponseTestRequest, IpcMsgBase,
-               std::shared_ptr<dzIPC::Srv::RequestResponseTestRequest>>(m, "RequestResponseTestRequest")
+    py::class_<dzIPC::Srv::RequestResponseTestRequest, IpcMsgBase, std::shared_ptr<dzIPC::Srv::RequestResponseTestRequest>>(m, "RequestResponseTestRequest")
         .def(py::init<>())
         .def_readwrite("request", &dzIPC::Srv::RequestResponseTestRequest::request);
 
-    py::class_<dzIPC::Srv::RequestResponseTestResponse, IpcMsgBase,
-               std::shared_ptr<dzIPC::Srv::RequestResponseTestResponse>>(m, "RequestResponseTestResponse")
+    py::class_<dzIPC::Srv::RequestResponseTestResponse, IpcMsgBase, std::shared_ptr<dzIPC::Srv::RequestResponseTestResponse>>(m, "RequestResponseTestResponse")
         .def(py::init<>())
         .def_readwrite("response", &dzIPC::Srv::RequestResponseTestResponse::response);
 
-    m.def("message_types",
-          []()
-          {
-              return std::vector<std::string>{
-                  "ComplexMessage",
-                  "TestMsg",
-              };
-          });
+    m.def("message_types", []() {
+        return std::vector<std::string>{
+            "ComplexMessage",
+            "TestMsg",
+        };
+    });
 
-    m.def("create_message",
-          [](const std::string& type_name) -> std::shared_ptr<IpcMsgBase>
-          {
-              if (type_name == "ComplexMessage")
-                  return std::make_shared<dzIPC::Msg::ComplexMessage>();
-              if (type_name == "TestMsg")
-                  return std::make_shared<dzIPC::Msg::TestMsg>();
-              throw py::value_error("Unknown message type: " + type_name);
-          });
+    m.def("create_message", [](const std::string &type_name) -> std::shared_ptr<IpcMsgBase> {
+        if (type_name == "ComplexMessage") return std::make_shared<dzIPC::Msg::ComplexMessage>();
+        if (type_name == "TestMsg") return std::make_shared<dzIPC::Msg::TestMsg>();
+        throw py::value_error("Unknown message type: " + type_name);
+    });
 
-    m.def("service_types",
-          []()
-          {
-              return std::vector<std::string>{
-                  "RequestResponseTest",
-              };
-          });
+    m.def("service_types", []() {
+        return std::vector<std::string>{
+            "RequestResponseTest",
+        };
+    });
 
-    m.def("create_service_request",
-          [](const std::string& service_name) -> std::shared_ptr<IpcMsgBase>
-          {
-              if (service_name == "RequestResponseTest")
-                  return std::make_shared<dzIPC::Srv::RequestResponseTestRequest>();
-              throw py::value_error("Unknown service type: " + service_name);
-          });
+    m.def("create_service_request", [](const std::string &service_name) -> std::shared_ptr<IpcMsgBase> {
+        if (service_name == "RequestResponseTest") return std::make_shared<dzIPC::Srv::RequestResponseTestRequest>();
+        throw py::value_error("Unknown service type: " + service_name);
+    });
 
-    m.def("create_service_response",
-          [](const std::string& service_name) -> std::shared_ptr<IpcMsgBase>
-          {
-              if (service_name == "RequestResponseTest")
-                  return std::make_shared<dzIPC::Srv::RequestResponseTestResponse>();
-              throw py::value_error("Unknown service type: " + service_name);
-          });
+    m.def("create_service_response", [](const std::string &service_name) -> std::shared_ptr<IpcMsgBase> {
+        if (service_name == "RequestResponseTest") return std::make_shared<dzIPC::Srv::RequestResponseTestResponse>();
+        throw py::value_error("Unknown service type: " + service_name);
+    });
 
-    // AUTO_GENERATED_MSG_SRV_BINDINGS_END
+// AUTO_GENERATED_MSG_SRV_BINDINGS_END
 }

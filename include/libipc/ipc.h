@@ -6,6 +6,7 @@
 #include "libipc/def.h"
 #include "libipc/buffer.h"
 #include "libipc/shm.h"
+#include "libipc/sniffer.h"
 
 namespace ipc
 {

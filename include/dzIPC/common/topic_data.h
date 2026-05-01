@@ -38,7 +38,7 @@ public:
 
     std::shared_ptr<IpcMsgBase>& topic() { return topic_; };
 
-    TopicData* clone() const { return new TopicData(*this); }
+    TopicData* clone() { return new TopicData(*this); }
 
     void update(std::shared_ptr<IpcMsgBase>& other) { topic_ = std::move(other); }
 
@@ -48,7 +48,7 @@ public:
         topic_.reset(topic_cache->clone());
     }
 
-    bool check_msg_id(const ipc::buffer& data) { return topic_cache->check_id(data); }
+    bool check_msg_id(const ipc::buffer& data) override { return topic_cache->check_id(data); }
 
 private:
     TopicData(const TopicData& other)

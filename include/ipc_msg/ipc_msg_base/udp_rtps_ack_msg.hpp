@@ -86,3 +86,57 @@ public:
 
     IpcRtpsNackMsg* clone() const override { return new IpcRtpsNackMsg(*this); }
 };
+
+class IpcRtpsAckMsg : public IpcMsgBase
+{
+public:
+    static constexpr uint32_t kRtpsAckMsgId = 0x44'5A'41'4B;   // "DZAK"
+
+    IpcRtpsAckMsg() { set_msg_id(kRtpsAckMsgId); }
+
+    ~IpcRtpsAckMsg() = default;
+
+    uint16_t page_cnt{0};
+    uint32_t total_size{0};
+    uint32_t data_msg_id{0};
+    uint32_t receiver_id{0};
+
+    bool check_ak_id(const ipc::buffer& data) const { return check_id(data, kRtpsAckMsgId); }
+
+    ipc::buffer serialize() override
+    {
+        const uint32_t total_size_ = sizeof(page_cnt) + sizeof(total_size) + sizeof(data_msg_id) + sizeof(receiver_id);
+
+        ipc::buffer data = serialize_data_cut(total_size_);
+        uint32_t offset = 0;
+        uint16_t page = 1;
+
+        adapt_memcpy_tos(static_cast<uint8_t*>(data.data()), reinterpret_cast<const uint8_t*>(&page_cnt), page, offset,
+                         sizeof(page_cnt));
+        adapt_memcpy_tos(static_cast<uint8_t*>(data.data()), reinterpret_cast<const uint8_t*>(&total_size), page,
+                         offset, sizeof(total_size));
+        adapt_memcpy_tos(static_cast<uint8_t*>(data.data()), reinterpret_cast<const uint8_t*>(&data_msg_id), page,
+                         offset, sizeof(data_msg_id));
+        adapt_memcpy_tos(static_cast<uint8_t*>(data.data()), reinterpret_cast<const uint8_t*>(&receiver_id), page,
+                         offset, sizeof(receiver_id));
+
+        add_tail_msg(static_cast<uint8_t*>(data.data()) + offset, page);
+        return data;
+    }
+
+    void deserialize(const ipc::buffer& buffer) override
+    {
+        uint32_t offset = 0;
+
+        adapt_memcpy_tods(reinterpret_cast<uint8_t*>(&page_cnt), static_cast<const uint8_t*>(buffer.data()), offset,
+                          sizeof(page_cnt));
+        adapt_memcpy_tods(reinterpret_cast<uint8_t*>(&total_size), static_cast<const uint8_t*>(buffer.data()), offset,
+                          sizeof(total_size));
+        adapt_memcpy_tods(reinterpret_cast<uint8_t*>(&data_msg_id), static_cast<const uint8_t*>(buffer.data()), offset,
+                          sizeof(data_msg_id));
+        adapt_memcpy_tods(reinterpret_cast<uint8_t*>(&receiver_id), static_cast<const uint8_t*>(buffer.data()), offset,
+                          sizeof(receiver_id));
+    }
+
+    IpcRtpsAckMsg* clone() const override { return new IpcRtpsAckMsg(*this); }
+};

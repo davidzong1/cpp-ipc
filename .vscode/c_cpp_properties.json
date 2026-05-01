@@ -4,6 +4,7 @@
             "name": "Linux",
             "includePath": [
                 "${workspaceFolder}/**",
+                "${workspaceFolder}/exec/dzipc_topic_cat/include",
                 "/usr/include",
                 "/usr/local/include"
             ],

@@ -107,6 +107,7 @@ if (LIBIPC_BUILD_PYTHON)
 endif()
 
 add_subdirectory(exec/dzipc_list)
+add_subdirectory(exec/dzipc_topic_cat)
 
 if (LIBIPC_BUILD_TESTS)
     set(GOOGLETEST_VERSION 1.10.0)

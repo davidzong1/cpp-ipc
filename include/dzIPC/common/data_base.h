@@ -8,9 +8,7 @@ public:
     DataBase() = default;
     ~DataBase() = default;
 
-    virtual DataBase* clone() {};
-
-    virtual bool check_msg_id(const ipc::buffer& data) {}
+    virtual bool check_msg_id(const ipc::buffer& data) = 0;
 
     int msg_method{-1};
 };

@@ -37,6 +37,15 @@ struct prod_cons_impl<wr<relat::single, relat::single, trans::unicast>> {
         return 0;
     }
 
+    /// Writer's published position. Used by passive observers (e.g. ipc::sniffer)
+    /// to know where the producer is, without touching rd_.
+    circ::u2_t write_index() const noexcept {
+        return wt_.load(std::memory_order_acquire);
+    }
+    circ::u2_t read_index() const noexcept {
+        return rd_.load(std::memory_order_acquire);
+    }
+
     template <typename W, typename F, typename E>
     bool push(W* /*wrapper*/, F&& f, E* elems) {
         auto cur_wt = circ::index_of(wt_.load(std::memory_order_relaxed));
@@ -215,6 +224,11 @@ struct prod_cons_impl<wr<relat::single, relat::multi, trans::broadcast>> {
         return wt_.load(std::memory_order_acquire);
     }
 
+    /// Writer's published position; identical to cursor() for broadcast policies.
+    circ::u2_t write_index() const noexcept {
+        return wt_.load(std::memory_order_acquire);
+    }
+
     template <typename W, typename F, typename E>
     bool push(W* wrapper, F&& f, E* elems) {
         E* el;
@@ -314,6 +328,11 @@ struct prod_cons_impl<wr<relat::multi, relat::multi, trans::broadcast>> {
     alignas(cache_line_size) std::atomic<rc_t> epoch_ { 0 };
 
     circ::u2_t cursor() const noexcept {
+        return ct_.load(std::memory_order_acquire);
+    }
+
+    /// Writer's published position; identical to cursor() for broadcast policies.
+    circ::u2_t write_index() const noexcept {
         return ct_.load(std::memory_order_acquire);
     }
 

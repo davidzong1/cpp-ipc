@@ -120,6 +120,18 @@ public:
         return head_.cursor();
     }
 
+    /// Writer's published index. For broadcast policies this equals cursor();
+    /// for unicast it is wt_, which cursor() does not expose.
+    /// Used by ipc::sniffer for passive (non-registering) observation.
+    cursor_t write_index() const noexcept {
+        return head_.write_index();
+    }
+
+    /// Direct read-only access to the slot array. Used by ipc::sniffer.
+    /// Writers/readers should keep going through push/pop instead.
+    elem_t const* block() const noexcept { return block_; }
+    elem_t      * block()       noexcept { return block_; }
+
     template <typename Q, typename F>
     bool push(Q* que, F&& f) {
         return head_.push(que, std::forward<F>(f), block_);
